@@ -11,7 +11,7 @@ def create_smaller_network(df):
     
     # Creating smaller test network
     # Step 1: Read the original DataFrame (assuming 'df_network' is the original data)
-    smaller_test_network = df.head(12)#
+    smaller_test_network = df.head(12)
     smaller_test_network.reset_index(drop=True, inplace=True)
 
     # Modify first row
@@ -65,7 +65,6 @@ def create_smaller_network(df):
     smaller_test_network.at[7, 'Tåguppdrag'] = 2
     smaller_test_network.at[7, 'UppehållstypAnkomst'] = 'Passage'
 
-
     # Modify ninth row
     smaller_test_network.at[8, 'Ankomstplats'] = 'Stockholm'
     smaller_test_network.at[8, 'Avgångsplats'] = 'Hagalund'
@@ -76,7 +75,6 @@ def create_smaller_network(df):
     smaller_test_network.at[9, 'Avgångsplats'] = 'Hagalund'
     smaller_test_network.at[9, 'Tåguppdrag'] = 2
     smaller_test_network.at[9, 'UppehållstypAnkomst'] = 'Passage'
-
 
     smaller_test_network.at[10, 'Ankomstplats'] = 'Hagalund'
     smaller_test_network.at[10, 'Avgångsplats'] = 'Stockholm'
@@ -92,16 +90,6 @@ def create_smaller_network(df):
     # Step 3: Save the modified DataFrame to a new CSV file
     smaller_test_network.to_csv(network_name, index=False)
     return network_name
-
-
-# Define the file path
-
-# Load the CSV file into a DataFrame
-#df_network = pd.read_csv(file_path, sep=',', encoding='utf-8')
-
-
-#df_network
-
 
 
 def main():
