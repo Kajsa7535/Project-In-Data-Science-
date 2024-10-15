@@ -6,8 +6,6 @@ from network.model_new import Network
 file_path = "data/smaller_test_network.csv"
 df_network = pd.read_csv(file_path, sep=',', encoding='utf-8')
 
-df_network
-
 network = Network()
 
 network.initate_network(df_network)
@@ -16,10 +14,10 @@ print(network.D_matrix)
 print(" --------------------------------------------")
 print(" ")
 
-network.call_time_step()
-network.call_time_step()
-network.call_time_step()
-network.call_time_step()
-network.call_time_step()
-network.call_time_step()
-
+time_steps = 10
+for i in range(time_steps):
+    network.call_time_step()
+    print("Delay matrix at time step: ", i+1) 
+    print(network.D_matrix)
+    print(" --------------------------------------------")
+    print(" ")
