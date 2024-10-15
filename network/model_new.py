@@ -112,11 +112,11 @@ class Edge:
     def fetch_fij(self):
         return self.fij
     
-    def initiate_edge(self, df):
+    def initiate_edge(self, df, time_span):
         #average travel time on edge i to j
         rows = df[(df['Avgångsplats'] == self.i) & (df['Ankomstplats'] == self.j)]
         
-        average_travel_time = self.get_average_travel_time(rows)
+        average_travel_time = self.get_average_travel_time(rows, time_span)
         self.tij = average_travel_time
 
         #fraction of trains that continue from i to j
@@ -126,14 +126,18 @@ class Edge:
         # fraction of trains that continue from i to j if they do not end at i
         self.rij = self.get_rij(df)
         rows = df[(df['Avgångsplats'] == self.i) & (df['Ankomstplats'] == self.j)]
-        self.fij = self.get_fij(rows)
+        self.fij = self.get_fij(rows, time_span)
     
 
-    def get_average_travel_time(self, rows): 
+    def get_average_travel_time(self, rows, time_span): 
         #rows are the trains that travel from station i to j
         rows = rows.dropna(subset=['UtfAnkTid', 'UtfAvgTid'])
-        time_diff = pd.to_datetime(rows['UtfAnkTid']) - pd.to_datetime(rows['UtfAvgTid'])
-        # Convert the time difference to minutes
+
+        rows = rows[(rows['UtfAnkTid'].dt.time.between(time_span[0], time_span[1])) & 
+                (rows['UtfAvgTid'].dt.time.between(time_span[0], time_span[1]))]
+        #print UtfAnkTid and UtfAvgTid
+        time_diff = rows['UtfAnkTid'] - rows['UtfAvgTid']
+
         time_diff = time_diff.dt.total_seconds() / 60
         mean_time_diff = time_diff.mean()
         rounded = np.round(mean_time_diff, 2)
@@ -175,10 +179,16 @@ class Edge:
         rij = trains_to_j_count/len(trains_that_pass_i)
         return rij
 
-    def get_fij(self, rows):
+    def get_fij(self, rows, time_span):
+        time_span_minute_conut = (time_span[1].hour - time_span[0].hour) * 60
+
+        rows = rows[(rows['UtfAnkTid'].dt.time.between(time_span[0], time_span[1])) & 
+                (rows['UtfAvgTid'].dt.time.between(time_span[0], time_span[1]))]
+
         #right now the freq is only calculated for one time unit which is now all the time we have
         #rows should be all trains that depart from station i to station j
-        return len(rows)
+        freq = len(rows)/time_span_minute_conut
+        return freq
     
 
 # +
@@ -195,11 +205,15 @@ class Network:
         self.D_matrix = None #delay matrix for the network
         self.current_time = None
         self.time_step = None
+        self.time_span = None
     
-    def initate_network(self, df, time_step = 1):
+    def initate_network(self, df, time_span=("2019-03-31 15:00:00.000","2019-03-31 19:00:00.000"), time_step = 1):
         #convert the columns UtfAnkTid and UtfAvgTid to datetime
         df['UtfAnkTid'] = pd.to_datetime(df['UtfAnkTid'])
         df['UtfAvgTid'] = pd.to_datetime(df['UtfAvgTid'])
+        time_span = (pd.to_datetime(time_span[0]), pd.to_datetime(time_span[1]))
+        time_span = (time_span[0].time(), time_span[1].time())
+        self.time_span = time_span
 
         self.time_step = time_step
         network_start_time = self.extract_start_time(df)
@@ -225,6 +239,7 @@ class Network:
             station = self.stations[station_name]
             #station delay matrix is the delay at the station at the start time
             D_matrix[row_index] = station.delay
+            print("Station name and idex: ", station_name, row_index)
         self.D_matrix = D_matrix
         #loop through all stations and calculate the delay
 
@@ -241,6 +256,10 @@ class Network:
             station.delay = self.D_matrix[row_index]
         #add time step to the current time
         self.current_time += pd.DateOffset(minutes = self.time_step,)
+        print("Delay matrix at time: ", self.current_time)
+        print(self.D_matrix)
+        print(" --------------------------------------------")
+        print(" ")
 
         
 
@@ -252,7 +271,7 @@ class Network:
 
     def add_edge(self, id, start, end, df, adj_matrix):
         edge = Edge(id, start, end, adj_matrix)
-        edge.initiate_edge(df)
+        edge.initiate_edge(df, self.time_span)
         key = (start,end)
         self.edges[key] = edge
     
