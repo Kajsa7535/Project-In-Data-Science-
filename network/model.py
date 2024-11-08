@@ -208,6 +208,7 @@ class Edge:
     #rows should be all trains that depart from station i to station j
     def get_fij(self, rows, time_span, minutes):
         rows = rows[(rows['UtfAvgTid'].dt.time.between(time_span[0], time_span[1], inclusive='left'))]
+        
         freq = len(rows)/minutes
         return freq
 
@@ -452,7 +453,7 @@ class Network:
         print(f"Neighbours in: {[neighbour.name for neighbour in station.N_in]}")
         print(f"Neighbours out: {[neighbour.name for neighbour in station.N_out]}")
         print(f"si: {station.si}")
-        print(f"Bi: {station.Bi}")
+        print(f"Bi: {station.Bis}")
         print(" ")
         return
 
@@ -461,14 +462,22 @@ class Network:
         key = (start,end)
         edge = self.edges[key]
         print(f"Edge from {start} to {end}")
-        print(f"Travel time: {edge.tij}")
+        print(f"Travel time: {edge.tijs}")
         print(f"pij: {edge.pij}")
         print(f"rij: {edge.rij}")
-        print(f"fij: {edge.fij}")
+        print(f"fij: {edge.fijs}")
         print(f"Aij: {edge.Aij}")
         print(" ")
         return
 
+    def print_delay_matrix(self):
+        delay_matrix= self.D_matrix
+        print("Delay matrix at time: ", self.current_time)
+        
+        for station_name, row_index in self.station_indicies.items(): 
+            print(f"{station_name}: {delay_matrix[row_index][0]}")
+        return
+    
     # Function that prints the network information
     def print_network_info(self):
         for station_name in self.stations:
@@ -478,7 +487,5 @@ class Network:
             end = edge[1]
             self.print_edge_info(start, end)
         print(self.A_matrix)
-        print("Delay matrix at time: ", self.current_time)
-        print(self.D_matrix)
+        self.print_delay_matrix()
         return
-
