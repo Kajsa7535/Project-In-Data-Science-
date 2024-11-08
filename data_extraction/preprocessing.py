@@ -1,20 +1,10 @@
-# For "UtfAvgTid"  "UtfAnkTid". 
-# find rows with missing values
-# if UtfAvgTid is empty -> find the previous row and copy the UtfAnkTid (the time we got to the previous station, and assume we depart at the same time)
-# if UtfAnkTid is empty -> find the next row and copy the UtfAvgTid (the time we depart from the next station, and assume we arrive at the same time)
-
-
-# Ex solna -> Stockholm mission 12
-# Stockholm is missing. 
-# get Solna ankTid for mission 12
 def missing_utfAvgTid(df):
-    print("INNNN")
     missing_rows_Avg = df[df['UtfAvgTid'].isnull()] 
     missing_rows_Ank = df[df['UtfAnkTid'].isnull()]
     #this Avg station should be the same as the previous Ank station
     for row in missing_rows_Avg.iterrows():
-        print("missi")
-        print(row)
+        row = row[1]
+    
         train_number = row['Tåguppdrag']
         date = row['Datum_PAU']
         previous_station = df[(df['Tåguppdrag'] == train_number) & (df['Datum_PAU'] == date) & (df['Ankomstplats'] == row['Avgångsplats'])]

@@ -7,7 +7,7 @@ def get_dataframe(file_path, sep=';'):
 
 
 def create_smaller_network(df):
-    network_name = "data/smaller_test_network.csv"
+    network_name = "../data/smaller_test_network.csv"
     
     # Creating smaller test network
     # Step 1: Read the original DataFrame (assuming 'df_network' is the original data)
@@ -95,7 +95,7 @@ def create_smaller_network(df):
 def main():
     print("in main")
     month_data = "month_data.csv"
-    file_path = r"data" + "/" + month_data
+    file_path = r"../" + "data" + "/" + month_data
     df = get_dataframe(file_path)
     smaller_network_name = create_smaller_network(df)
     print("done with smaller network creation: ", smaller_network_name)
