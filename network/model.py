@@ -471,8 +471,6 @@ class Network:
         return
 
     def print_delay_matrix(self):
-        #get the matrix indices in the correct order
-        # station_indicies = {station: idx}
         delay_matrix= self.D_matrix
         print("Delay matrix at time: ", self.current_time)
         

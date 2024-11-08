@@ -1,7 +1,7 @@
 def missing_utfAvgTid(df):
     missing_rows_Avg = df[df['UtfAvgTid'].isnull()] 
     missing_rows_Ank = df[df['UtfAnkTid'].isnull()]
-    #this Avg station should be the same as the previous Ank station
+
     for row in missing_rows_Avg.iterrows():
         row = row[1]
     
@@ -25,6 +25,7 @@ def missing_utfAvgTid(df):
             #update the row where id is the same as the missing row
             row_id = row['id']
             df.loc[df['id'] == row_id, 'UtfAnkTid'] = next_station['UtfAvgTid'].values[0]
+
     print('\n------Missing values filled------')
     print("total missing values in UtfAvgTid", len(missing_rows_Avg))
     print("total missing values in UtfAnkTid", len(missing_rows_Ank))
@@ -33,7 +34,7 @@ def missing_utfAvgTid(df):
     print("\n\n\n")
     return
 
+#creates a unique id for each row
 def create_ids(df):
-    #create a unique id for each row
     df['id'] = df.index
     return
