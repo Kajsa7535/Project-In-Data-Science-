@@ -208,6 +208,7 @@ class Edge:
     #rows should be all trains that depart from station i to station j
     def get_fij(self, rows, time_span, minutes):
         rows = rows[(rows['UtfAvgTid'].dt.time.between(time_span[0], time_span[1], inclusive='left'))]
+        
         freq = len(rows)/minutes
         return freq
 
@@ -481,4 +482,10 @@ class Network:
         print("Delay matrix at time: ", self.current_time)
         print(self.D_matrix)
         return
-
+    
+    def print_delay_matrix(self):
+        #get the matrix indices in the correct order
+        station_names = list(self.stations.keys())
+        # station_indicies = {station: idx}
+        print(self.D_matrix)
+        return
