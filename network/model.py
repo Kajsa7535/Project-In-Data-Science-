@@ -512,7 +512,7 @@ class Network:
             comparison = np.concatenate((comparison, comparison_matrix), axis=1)
             self.print_comparison_delay_matrix(comparison, print_all=False)
             print(" ")
-            #jämför
+            #TODO: compare the predicted delay with the true delay according to some metrics
         return
 
 
