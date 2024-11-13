@@ -154,7 +154,7 @@ class Edge:
         self.tijs = time_span_dict
         return
 
-    #calculates the average waiting time at a station for all trains that travel from station i to j during the input time span
+    #calculates the average travel time at a station for all trains that travel from station i to j during the input time span
     #input rows should be the trains that travel from station i to j
     def get_average_travel_time(self, rows, time_span): 
         rows = rows.dropna(subset=['UtfAnkTid', 'UtfAvgTid']) #remove rows that do not have a departure time or arrival time
