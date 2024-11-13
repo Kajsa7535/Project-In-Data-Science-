@@ -16,6 +16,7 @@
 
 import pandas as pd
 import numpy as np
+pd.set_option('display.max_rows', None)  # Show all rows
 
 
 class Station:
@@ -33,14 +34,14 @@ class Station:
         #rows are all trains that are going to this station
         rows = df[df['Ankomstplats'] == self.name]
         self.si = self.get_si(rows)
-        self.delay = self.initiate_delay(df, network_start_time)
+        self.delay = self.calculate_delay(df, network_start_time)
         return
 
-    # Function that finds the intial delay of the station
-    def initiate_delay(self, df, network_time):
+    # Function that finds the delay of the station at the current network time
+    def calculate_delay(self, df, network_time):
         #rows are all trains that are going to this station
         rows = df[df['Ankomstplats'] == self.name]        
-        rows = rows[(rows['UtfAnkTid'] >= network_time) & (rows['UtfAvgTid'] <= network_time)]
+        rows = rows[(rows['UtfAnkTid'] > network_time) & (rows['UtfAvgTid'] <= network_time)]
         if len(rows) == 0:
             return 0
         
@@ -284,14 +285,15 @@ class Network:
         self.time_step = None #time step of the network, delta t
     
     #Initiates the network.
-    def initate_network(self, df, time_step = 1):
+    def initate_network(self, df, time_step = 1, network_start_time = None):
         
         # Comverts the times from string to datetime
         df['UtfAnkTid'] = pd.to_datetime(df['UtfAnkTid'])
         df['UtfAvgTid'] = pd.to_datetime(df['UtfAvgTid'])
     
         self.time_step = time_step
-        network_start_time = self.extract_start_time(df) 
+        if network_start_time is None:
+            network_start_time = self.extract_start_time(df) 
         self.current_time = network_start_time
         self.extract_stations(df)
         self.extract_edges(df)
@@ -317,10 +319,22 @@ class Network:
             D_matrix[row_index] = station.delay
         self.D_matrix = D_matrix
         return
+    
+    # Calculates and returns the D matrix for the current time from the data in df
+    def fetch_D_matrix(self, df):
+        D_matrix = np.zeros((self.N,1))
+
+        for station_name, row_index in self.station_indicies.items():
+            station = self.stations[station_name]
+            station_delay = station.calculate_delay(df, self.current_time)
+            #station delay matrix is the delay at the station at the start time
+            D_matrix[row_index] = station_delay
+       
+        return D_matrix
+
 
     # Function that executes a time step 
-    def call_time_step(self):
-        
+    def predict_time_step(self):
         matrix_keys = list(self.G_matrices.keys()) # Get all the time intervals 
         current_time = self.current_time.time()
         
@@ -473,6 +487,35 @@ class Network:
                 G_matrix[row_index][col_index] = value
         return G_matrix
 
+    # Evaluates the network against the actual data.
+    def evaluate_network(self, df, time_steps):
+        print("Evaluating network")
+        print("Time steps: ", time_steps)
+        print("Network start time: ", self.current_time)
+        print("-------------------------")
+
+        for step in range(time_steps):
+            print(f"Time step: {step+1}")
+
+            true_delay = self.fetch_D_matrix(df) #matrix that holds the true delay of the data in df
+            true_delay = np.round(true_delay, 3)#round the delay matrix to 3 decimals
+            
+            self.predict_time_step() #predicts the delay matrix for the next time step
+            predicted_delay = self.D_matrix #predicted delay matrix
+            predicted_delay = np.round(predicted_delay, 3) #round the delay matrix to 3 decimals
+            comparison = np.concatenate((true_delay, predicted_delay), axis=1) # Prints the delaymatrix so both values are side by side 
+            comparison = np.round(comparison, 3) #round the comparison matrix to 3 decimals
+            #make a column that is true delay - predicted delay
+            comparison_matrix = np.zeros((self.N,1))
+            for i in range(self.N):
+                comparison_matrix[i] = true_delay[i] - predicted_delay[i]
+            comparison = np.concatenate((comparison, comparison_matrix), axis=1)
+            self.print_comparison_delay_matrix(comparison, print_all=False)
+            print(" ")
+            #jämför
+        return
+
+
     # Function that prints the station information of a specific station
     def print_station_info(self, station_name):
         station = self.stations[station_name]
@@ -497,22 +540,38 @@ class Network:
         print(" ")
         return
 
-    def print_delay_matrix(self, print_all = True):
-        if print_all: 
+    # Print the delay matrix
+    def print_delay_matrix(self, print_all = True, delay_matrix = None):
+        if delay_matrix is None:
             delay_matrix = self.D_matrix
-            print("Delay matrix at time: ", self.current_time)
-            
+        print("Delay matrix at time: ", self.current_time)
+        if print_all: 
             for station_name, row_index in self.station_indicies.items(): 
                 print(f"{station_name}: {delay_matrix[row_index][0]}")
         else: 
-            delay_matrix = self.D_matrix
-            print("Delay matrix at time: ", self.current_time)
             for station_name, row_index in self.station_indicies.items(): 
                 if(delay_matrix[row_index][0] != 0):
                     print(f"{station_name}: {delay_matrix[row_index][0].round(3)}")
             
         return
     
+    # Print the comparison delay matrix. That is the matrix that includes the actual delay, the predicted delay and the difference between them. 
+    def print_comparison_delay_matrix(self, comparison_delay_matrix, print_all = True,):
+        print("Delay matrices at time: ", self.current_time)
+        print("Station: True delay, Predicted delay, Difference")
+        
+        name_array = np.array(list(self.station_indicies.keys())) #array of station names
+        comparison_df = pd.DataFrame(comparison_delay_matrix, index = name_array, columns = ["True delay", "Predicted delay", "Difference"]) #put in a dataframe for easier visualization
+        comparison_df= comparison_df.sort_index()        
+        
+        if print_all: 
+           print(comparison_df)
+        else: 
+            #filtering out the rows that have 0 in both columns
+            comparison_df = comparison_df[(comparison_df["True delay"] != 0) | (comparison_df["Predicted delay"] != 0)]
+            print(comparison_df)
+        return
+
     # Function that prints the network information
     def print_network_info(self):
         for station_name in self.stations:
