@@ -106,6 +106,13 @@ class Station:
     def fetch_Bi(self, time_span):
         value = self.Bis[time_span]
         return value
+    
+    def print_Bi(self):
+        print("Bi:")
+        for key, value in self.Bis.items():
+            start_time = key[0].hour  # Extract the starting hour
+            end_time = key[1].hour    # Extract the ending hour
+            print(f"{start_time}-{end_time} Bi: {value}")
 
 
 #####################################################################################################
@@ -147,7 +154,7 @@ class Edge:
         self.tijs = time_span_dict
         return
 
-    #calculates the average travel time for all trains that travel from station i to j during the input time span
+    #calculates the average waiting time at a station for all trains that travel from station i to j during the input time span
     #input rows should be the trains that travel from station i to j
     def get_average_travel_time(self, rows, time_span): 
         rows = rows.dropna(subset=['UtfAnkTid', 'UtfAvgTid']) #remove rows that do not have a departure time or arrival time
@@ -161,8 +168,11 @@ class Edge:
         
         mean_time_diff = time_diff.mean()
         rounded = np.round(mean_time_diff, 2) #round to two decimals
-
+        if rounded == 0: #if the mean time difference is 0, return 1 to avoid losing the edge
+            return 1
         return rounded #in minutes
+    
+
     
     #calculates the probability of a train that has gone to i, to continue to j
     #rows should be the trains that either arrive at i or depart at i
@@ -208,7 +218,6 @@ class Edge:
     #rows should be all trains that depart from station i to station j
     def get_fij(self, rows, time_span, minutes):
         rows = rows[(rows['UtfAvgTid'].dt.time.between(time_span[0], time_span[1], inclusive='left'))]
-        
         freq = len(rows)/minutes
         return freq
 
@@ -241,6 +250,24 @@ class Edge:
             avg_time_dict[time_span] = avg_time
         
         return frequency_dict, avg_time_dict
+    
+    #function to print the frequencies of the edge
+    def print_frequencies(self):
+        print("Frequencies:")
+        for key, value in self.fijs.items():
+            start_time = key[0].hour  # Extract the starting hour
+            end_time = key[1].hour    # Extract the ending hour
+            print(f"{start_time}-{end_time} fij: {value}")
+        return
+    
+    #function to print the travel times of the edge
+    def print_travel_times(self):
+        print("Travel times:")
+        for key, value in self.tijs.items():
+            start_time = key[0].hour
+            end_time = key[1].hour
+            print(f"{start_time}-{end_time} tij: {value}")
+        return
     
 ############################################################################################################
         
@@ -453,7 +480,7 @@ class Network:
         print(f"Neighbours in: {[neighbour.name for neighbour in station.N_in]}")
         print(f"Neighbours out: {[neighbour.name for neighbour in station.N_out]}")
         print(f"si: {station.si}")
-        print(f"Bi: {station.Bis}")
+        station.print_Bi()
         print(" ")
         return
 
@@ -462,20 +489,28 @@ class Network:
         key = (start,end)
         edge = self.edges[key]
         print(f"Edge from {start} to {end}")
-        print(f"Travel time: {edge.tijs}")
+        edge.print_travel_times()
         print(f"pij: {edge.pij}")
         print(f"rij: {edge.rij}")
-        print(f"fij: {edge.fijs}")
+        edge.print_frequencies()
         print(f"Aij: {edge.Aij}")
         print(" ")
         return
 
-    def print_delay_matrix(self):
-        delay_matrix= self.D_matrix
-        print("Delay matrix at time: ", self.current_time)
-        
-        for station_name, row_index in self.station_indicies.items(): 
-            print(f"{station_name}: {delay_matrix[row_index][0]}")
+    def print_delay_matrix(self, print_all = True):
+        if print_all: 
+            delay_matrix = self.D_matrix
+            print("Delay matrix at time: ", self.current_time)
+            
+            for station_name, row_index in self.station_indicies.items(): 
+                print(f"{station_name}: {delay_matrix[row_index][0]}")
+        else: 
+            delay_matrix = self.D_matrix
+            print("Delay matrix at time: ", self.current_time)
+            for station_name, row_index in self.station_indicies.items(): 
+                if(delay_matrix[row_index][0] != 0):
+                    print(f"{station_name}: {delay_matrix[row_index][0].round(3)}")
+            
         return
     
     # Function that prints the network information
