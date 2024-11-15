@@ -54,10 +54,12 @@ class Station:
     def get_si(self, rows):
         #rows are all rows that are going to this station
         if len(rows) == 0:
-            return 0
+            return 0 +1
         final_station_rows = rows[rows['UppehållstypAnkomst'] == 'Sista']
         total_rows = len(rows)
         final_rows = len(final_station_rows)
+        hello = 'hello Kajsa!! '
+
         return final_rows/total_rows
     
     # Creates and initiates Bi dictionary, for now creates one Bi for every hour (00 - 23)
