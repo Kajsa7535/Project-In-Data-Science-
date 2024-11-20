@@ -4,13 +4,13 @@ import os
 from network.model import Network
 
 #smaller network data
-print(os.getcwd())
 file_path = r"data/test_network_week_45_bigger.csv"
 df_network = pd.read_csv(file_path, sep=',', encoding='utf-8')
 
 network = Network()
-start_time = pd.to_datetime("2019-03-27 10:18:00")
+start_time = pd.to_datetime("2019-03-27 16:30:00")
 network.initate_network(df_network, time_step=3, network_start_time=start_time)
+
 #network.print_network_info()
 print("initial delay matrix")
 network.print_delay_matrix(print_all=False)
