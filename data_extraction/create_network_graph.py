@@ -1,5 +1,5 @@
 #create network graph
-#import networkx as nx
+
 import pygraphviz as pgv
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -11,7 +11,7 @@ from io import BytesIO
 
 # Add the parent directory of 'network' to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-#sys.path.append(os.path.abspath('../'))
+
 
 from network.model import Network
 
