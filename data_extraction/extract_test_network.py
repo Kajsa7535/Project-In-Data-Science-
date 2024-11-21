@@ -3,14 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-
+import os
+import preprocessing
 
 file_name = "month_data.csv"
 # Define the file path
 file_path = r"../" +"data" + "/" + file_name
-
-import os
-import pandas as pd
 
 # Change working directory to the script's directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -20,7 +18,6 @@ file_path = '../data/month_data.csv'
 
 # Read the CSV
 df = pd.read_csv(file_path, sep=';', encoding='utf-8')
-
 
 specific_date = '2019-03-27'  # Change this to desired date
 start_time = '7:00:00' #select peak hours of the day
@@ -73,7 +70,7 @@ for mission_type in mission_types:
     # Initialize a list to hold the routes for the current mission
     routes = []
 
-    # Step 4: Iterate through the DataFrame to build routes
+    # Iterate through the DataFrame to build routes
     for index, row in filtered_for_time.iterrows():
         if row['UppehållstypAvgång'] == 'Första' and row['Tåguppdrag'] == mission_type:
             # Start the route with the departure station
@@ -113,7 +110,7 @@ for mission_type in mission_types:
 # Save the filtered rows used to generate the routes into a new DataFrame
 filtered_rows_df = pd.DataFrame(all_filtered_rows)
 
-import preprocessing
+
 
 
 #fill missing values and do preprocessing
