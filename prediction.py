@@ -6,14 +6,15 @@ from network.model import Network
 #smaller network data
 print(os.getcwd())
 file_path = r"data/test_network_week_45_bigger.csv"
-df_network = pd.read_csv(file_path, sep=',', encoding='utf-8')
+file_path_smaller = r"data/smaller_test_network.csv"
+df_network = pd.read_csv(file_path_smaller, sep=',', encoding='utf-8')
 
 network = Network()
-start_time = pd.to_datetime("2019-03-27 10:18:00")
-network.initate_network(df_network, time_step=3, network_start_time=start_time)
+start_time = pd.to_datetime("2019-03-27 16:34:00")
+network.initate_network(df_network, time_step=1)#, network_start_time=start_time)
 #network.print_network_info()
 print("initial delay matrix")
-network.print_delay_matrix(print_all=False)
+network.print_delay_matrix()
 print(" --------------------------------------------")
 print(" ")
 
@@ -32,7 +33,7 @@ print(" ")
 #network.print_edge_info("Tomteboda övre", "Karlberg")
 #network.print_edge_info("Karlberg", "Stockholm C")
 
-time_steps = 5
+time_steps = 1
 
 network.evaluate_network(df_network, time_steps)
 

@@ -24,6 +24,7 @@ class Station:
         self.name = name
         self.id = id
         self.delay = 0 # total delay at the station at the current time step, maybe this needs to be a list so we store the delay for each time step
+        self.delay_origins = [] # list of delays for each train that is going to this station
         self.T_ij = []  # set of trains moving to station i at time t #TODO
         self.N_out = [] # set of stations to which there is a edge from station i (neightbours out)
         self.N_in = [] # set of stations from which there is an edge to station i (neighbours in)
@@ -44,9 +45,14 @@ class Station:
         rows = rows[(rows['UtfAnkTid'] > network_time) & (rows['UtfAvgTid'] <= network_time)]
         if len(rows) == 0:
             return 0
-        
         #sum of all of the incoming trains delays
         delay = rows['AvgFörsening'].sum()
+        if abs(delay) > 0:
+            delayed_rows = rows[abs(rows['AvgFörsening']) > 0]
+            for row in delayed_rows.iterrows():
+                delay_item = ((row[1]['Avgångsplats'], row[1]['Ankomstplats']), row[1]['AvgFörsening']) #((start, end), delay)
+                if delay_item not in self.delay_origins:
+                    self.delay_origins.append(delay_item)
         return delay
 
 
@@ -280,7 +286,8 @@ class Network:
         self.station_indicies = None  # station_indicies = {station: idx}
         self.A_matrix = None # adjacency matrix for the network
         self.G_matrices = None #dict of G matrices for each hour of the day
-        self.D_matrix = None #delay matrix for the network currently at time step
+        self.D_matrix = None #delay matrix for the network at the current time step
+        self.D_matrices = None #list that holds each delay matrix with its corresponding G_matrices for the network currently at time step #HÄR [(D_matrix, [G_matrices]), (D_matrix, [G_matrices])...]
         self.current_time = None #the current time of the network
         self.time_step = None #time step of the network, delta t
     
@@ -302,6 +309,7 @@ class Network:
             self.stations[station].initiate_Bis(self.edges)
         self.extract_G_matrices()
         self.extract_D_matrix()
+        self.extract_D_matrices()
         return
     
     # Extract the first time that exists in the data
@@ -320,6 +328,29 @@ class Network:
         self.D_matrix = D_matrix
         return
     
+    # Calculates the D matrix by going through the station and extracts the delays
+    def extract_D_matrices(self):
+        D_matrices = []
+        for station_name, row_index in self.station_indicies.items():
+            station = self.stations[station_name]
+            #station delay matrix is the delay at the station at the start time
+            if len(station.delay_origins) > 0:
+                delays = station.delay_origins  #[(start, end), 12),...]
+                for delay_item in delays:
+                    #(stat, stat), 12)
+                    current_thread_D_matrix = np.zeros((self.N,1))
+                    delay = delay_item[1]
+                    current_thread_D_matrix[row_index] = delay
+                    delay_edge = delay_item[0]
+                    directed_A_matrix = self.create_directed_A_matrix(delay_edge)
+                    # CREATE AN ADJACENCY MATRIX FOR THIS DELAY
+                    D_matrices.append((current_thread_D_matrix, {}))        
+            #fetcha rätt matris och lägg i listan
+        self.D_matrices = D_matrices
+        return
+    
+
+    
     # Calculates and returns the D matrix for the current time from the data in df
     def fetch_D_matrix(self, df):
         D_matrix = np.zeros((self.N,1))
@@ -329,9 +360,53 @@ class Network:
             station_delay = station.calculate_delay(df, self.current_time)
             #station delay matrix is the delay at the station at the start time
             D_matrix[row_index] = station_delay
-       
         return D_matrix
 
+    def create_directed_A_matrix(self, directed_edge):
+        #directed edge = (start, end)
+        # Remove the outgoing edge that the delay was on 
+        # Remove all incoming edges on the current station
+        # Move to all the connected stations except the station where the delay came from, and do the same to them. 
+        directed_A_matrix = self.A_matrix.copy()
+        #step 1 remove the edge (end, start)
+        #step 2 for each item in frontier: remove all 1:s in end column expcet for the start row 
+        # add all outgoing edges from current item to frontier (add all 1:s in the row for the current item end station)
+        current_edge = directed_edge
+        print("current edge", current_edge)
+        #STEP 1
+        print("MATRIX BEFORE REMOVE STEP 1")
+        print(directed_A_matrix)
+        directed_A_matrix.loc[current_edge[1]][current_edge[0]] = 0
+        print("MATRIX AFTER REMOVE STEP 1")
+        print(directed_A_matrix)
+        froniter = [current_edge] #list of nodes to visit
+        while len(froniter) > 0:
+            #TODO eventuellt lägga till lite weights 
+            current_edge = froniter.pop(0) #(end, start)
+            print("CURRENT EDGE FROM FRONTIER")
+            print(current_edge)
+            #remove all 1s in the end column except for the start row
+            #Remove all incoming edges on the current station except for the edge that the delay came from
+            
+            #change all 1:s in the end column to 0 except for the start row
+            directed_A_matrix.loc[:, current_edge[1]] = 0
+            directed_A_matrix.loc[current_edge[0]][current_edge[1]] = 1
+            #get all outgoing edges from the current station
+            #get indx for all 1s in the row for the current item end station
+            outgoings_row = directed_A_matrix.loc[current_edge[1]] # The row for the current endstatio
+            print("outgoings row")
+            print(outgoings_row)
+            outgoings_indicies = outgoings_row[outgoings_row == 1].index
+            print("indices for outgoing stations", outgoings_indicies)
+            # ['Karlberg', 'Tomteboda övre']
+            new_edges = [(current_edge[1], x) for x in outgoings_indicies if x != current_edge[0]] 
+             # [('solna','Karlberg'), ('solna','Tomteboda övre')]
+            print("new edges", new_edges)
+            froniter += new_edges
+        print("MATRIX AFTER REMOVE STEP 2")
+        print(directed_A_matrix)
+
+        return
 
     # Function that executes a time step 
     def predict_time_step(self):
