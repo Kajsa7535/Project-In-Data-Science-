@@ -4,7 +4,6 @@ import os
 from network.model import Network
 
 #smaller network data
-print(os.getcwd())
 file_path = r"data/test_network_week_45_bigger.csv"
 file_path_smaller = r"data/smaller_test_network.csv"
 df_network = pd.read_csv(file_path_smaller, sep=',', encoding='utf-8')
