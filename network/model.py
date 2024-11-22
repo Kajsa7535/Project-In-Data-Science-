@@ -541,7 +541,7 @@ class Network:
         return
 
     # Print the delay matrix
-    def print_delay_matrix(self, print_all = True, delay_matrix = None):
+    def print_delay_matrix(self, print_all = True, delay_matrix = None, cap=0.25):
         if delay_matrix is None:
             delay_matrix = self.D_matrix
         print("Delay matrix at time: ", self.current_time)
@@ -550,13 +550,13 @@ class Network:
                 print(f"{station_name}: {delay_matrix[row_index][0]}")
         else: 
             for station_name, row_index in self.station_indicies.items(): 
-                if(delay_matrix[row_index][0] != 0):
+                if(abs(delay_matrix[row_index][0]) >= cap):
                     print(f"{station_name}: {delay_matrix[row_index][0].round(3)}")
             
         return
     
     # Print the comparison delay matrix. That is the matrix that includes the actual delay, the predicted delay and the difference between them. 
-    def print_comparison_delay_matrix(self, comparison_delay_matrix, print_all = True,):
+    def print_comparison_delay_matrix(self, comparison_delay_matrix, print_all = True,cap=0.25):
         print("Delay matrices at time: ", self.current_time)
         print("Station: True delay, Predicted delay, Difference")
         
@@ -568,7 +568,7 @@ class Network:
            print(comparison_df)
         else: 
             #filtering out the rows that have 0 in both columns
-            comparison_df = comparison_df[(comparison_df["True delay"] != 0) | (comparison_df["Predicted delay"] != 0)]
+            comparison_df = comparison_df[(comparison_df["True delay"] != 0) | (abs(comparison_df["Predicted delay"]) >= cap)]
             print(comparison_df)
         return
 
