@@ -287,7 +287,7 @@ class Network:
         self.A_matrix = None # adjacency matrix for the network
         self.G_matrices = None #dict of G matrices for each hour of the day
         self.D_matrix = None #delay matrix for the network at the current time step
-        self.D_matrices = None #list that holds each delay matrix with its corresponding G_matrices for the network currently at time step #HÄR [(D_matrix, [G_matrices]), (D_matrix, [G_matrices])...]
+        self.D_matrices = None #list that holds each delay matrix with its corresponding G_matrices for the network currently at time step [(D_matrix, [G_matrices]), (D_matrix, [G_matrices])...]
         self.current_time = None #the current time of the network
         self.time_step = None #time step of the network, delta t
     
@@ -336,19 +336,15 @@ class Network:
             station = self.stations[station_name]
             #station delay matrix is the delay at the station at the start time
             if len(station.delay_origins) > 0:
-                delays = station.delay_origins  #[(start, end), 12),...]
+                delays = station.delay_origins
                 for delay_item in delays:
-                    #(stat, stat), 12)
                     current_thread_D_matrix = np.zeros((self.N,1))
                     delay = delay_item[1]
                     current_thread_D_matrix[row_index] = delay
                     delay_edge = delay_item[0]
                     directed_A_matrix = self.create_directed_A_matrix(delay_edge)
                     G_matrices = self.create_directed_G_matrices(directed_A_matrix)
-                    # CREATE AN ADJACENCY MATRIX FOR THIS DELAY
                     D_matrices.append([current_thread_D_matrix, G_matrices])     
-                   # self.print_delay_matrix(delay_matrix = current_thread_D_matrix)
-            #fetcha rätt matris och lägg i listan
         self.D_matrices = D_matrices
         return
     
@@ -455,7 +451,7 @@ class Network:
             delay_thread[0] = current_delay + difference
 
         total_delay = np.zeros((self.N,1))
-        for delay_thread in self.D_matrices: #sum all individual delay matrices [[D, [G]]....] D= [, , , ]
+        for delay_thread in self.D_matrices: #sum all individual delay matrices
             total_delay += delay_thread[0]
             
         # Goes throigh all all stations and updates the new delay
@@ -631,7 +627,7 @@ class Network:
             true_delay = self.fetch_D_matrix(df) #matrix that holds the true delay of the data in df
             true_delay = np.round(true_delay, 3)#round the delay matrix to 3 decimals
             
-            self.predict_time_step_with_direction() # predict the delay matrix f with directions
+            self.predict_time_step_with_direction() # predict the delay matrix with directions
             predicted_delay = self.D_matrix #predicted delay matrix
             predicted_delay = np.round(predicted_delay, 3) #round the delay matrix to 3 decimals
             comparison = np.concatenate((true_delay, predicted_delay), axis=1) # Prints the delaymatrix so both values are side by side 
