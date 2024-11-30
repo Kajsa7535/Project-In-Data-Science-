@@ -16,6 +16,10 @@
 
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pygraphviz as pgv
+
 pd.set_option('display.max_rows', None)  # Show all rows
 
 
@@ -459,7 +463,7 @@ class Network:
             G_matrices[time_span] = self.calculate_G_matrix(G_matrices[time_span], time_span, n)
        
         
-        self.G_matrices = G_matrices
+            self.G_matrices = G_matrices
         return
 
     # Function that calculates the G matrix for a specific time span
@@ -486,9 +490,9 @@ class Network:
                 value = Aji * pji * Bj - Bj * kronecker
                 G_matrix[row_index][col_index] = value
         return G_matrix
-
+    
     # Evaluates the network against the actual data.
-    def evaluate_network(self, df, time_steps):
+    def evaluate_network(self, df, time_steps, visualize = False):
         print("Evaluating network")
         print("Time steps: ", time_steps)
         print("Network start time: ", self.current_time)
@@ -503,6 +507,10 @@ class Network:
             self.predict_time_step() #predicts the delay matrix for the next time step
             predicted_delay = self.D_matrix #predicted delay matrix
             predicted_delay = np.round(predicted_delay, 3) #round the delay matrix to 3 decimals
+
+            if visualize:
+                self.visualize_comparative_delays(true_delay, predicted_delay, step, title="Comparative Delay Visualization", cap=0.25)
+
             comparison = np.concatenate((true_delay, predicted_delay), axis=1) # Prints the delaymatrix so both values are side by side 
             comparison = np.round(comparison, 3) #round the comparison matrix to 3 decimals
             #make a column that is true delay - predicted delay
@@ -583,3 +591,72 @@ class Network:
         print(self.A_matrix)
         self.print_delay_matrix()
         return
+    
+   
+    #Visualizes actual vs. predicted delays using network graphs.
+    def visualize_comparative_delays(self, actual_delay, predicted_delay, step, title="Comparative Delay Visualization", cap=0.25):
+        # Function to map delays to colors
+        def get_color(value, cap):
+
+            #If the value is below the cap, returns a neutral color.
+            if abs(value) <= cap:
+                return "#D3D3D3"  # Neutral color for small delays (gray)
+
+            # Color mapping for significant delays
+            color_map = {
+                -15: "#0D47A1", -10: "#1976D2", -5: "#42A5F5", 
+                -3: "#90CAF9", -1: "#E3F2FD", 1: "#FFEBEE", 
+                3: "#FFCDD2", 5: "#E57373", 10: "#D32F2F", 
+                15: "#B71C1C"
+            }
+            
+            if value < 0:
+                for key in sorted(color_map.keys(), reverse=True):
+                    if value >= key:
+                        return color_map[key]
+            else:
+                for key in sorted(color_map.keys()):
+                    if value <= key:
+                        return color_map[key]
+
+            return color_map[key]
+
+        # Create two separate graphs: one for actual delays and one for predicted delays
+        graphs = {"Actual Delay": actual_delay, "Predicted Delay": predicted_delay}
+        
+        for graph_title, delay_array in graphs.items():
+            G = pgv.AGraph(directed=True)
+            # Add nodes with colors based on actual or predicted delays
+            for station_name, row_index in self.station_indicies.items():
+                delay = delay_array[row_index][0]
+                color = get_color(delay, cap)  # Use delay to determine color'
+                G.add_node(station_name, style="filled", fillcolor=color, fontsize=10, margin="0.1,0.1")
+
+            # Add edges from the network
+            for (start, end), _ in self.edges.items():
+                G.add_edge(start, end, penwidth=2, color="gray")
+
+            # Adjust layout for aesthetics
+            G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
+            
+            # Save the graph to a file
+            output_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
+            G.layout(prog="neato")
+            G.draw(output_path, format="png")
+            print(f"{graph_title} graph saved to {output_path}")
+
+        # Display the graphs side by side using matplotlib
+        _, axes = plt.subplots(1, 2, figsize=(16, 8))
+        for idx, (graph_title, _) in enumerate(graphs.items()):
+            img_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
+            img = plt.imread(img_path)
+            axes[idx].imshow(img)
+            axes[idx].axis("off")
+            axes[idx].set_title(graph_title, fontsize=14)
+
+        plt.suptitle(title, fontsize=16)
+        plt.tight_layout()
+        #save the plot as a png      
+        plt.savefig(f"images/compared_delays_step_{step + 1}.png", dpi=300, bbox_inches='tight')
+        return
+
