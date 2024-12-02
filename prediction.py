@@ -1,16 +1,15 @@
 
 import pandas as pd
-import os
 from network.model import Network
 
 #smaller network data
 file_path = r"data/test_network_week_45_bigger.csv"
+file_path_smaller = r"data/smaller_test_network.csv"
 df_network = pd.read_csv(file_path, sep=',', encoding='utf-8')
 
 network = Network()
-start_time = pd.to_datetime("2019-03-27 16:30:00")
-network.initate_network(df_network, time_step=3, network_start_time=start_time)
-
+start_time = pd.to_datetime("2019-03-27 11:55:00")
+network.initate_network(df_network, time_step=1, network_start_time=start_time)
 #network.print_network_info()
 print("initial delay matrix")
 network.print_delay_matrix(print_all=False)
@@ -32,7 +31,7 @@ print(" ")
 #network.print_edge_info("Tomteboda övre", "Karlberg")
 #network.print_edge_info("Karlberg", "Stockholm C")
 
-time_steps = 5
+time_steps = 10
 
 network.evaluate_network(df_network, time_steps)
 
