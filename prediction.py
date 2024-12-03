@@ -34,7 +34,7 @@ print(" ")
 
 time_steps = 10
 
-network.evaluate_network(df_network, time_steps, visualize=True)
+network.evaluate_network(df_network, time_steps, visualize=False)
 
 #for i in range(time_steps):
 #    network.call_time_step()

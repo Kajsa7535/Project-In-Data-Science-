@@ -346,7 +346,6 @@ class Network:
                     delay = delay_item[1]
                     current_thread_D_matrix[row_index] = delay
                     delay_edge = delay_item[0]
-                    print("DELAY EDGE: ", delay_edge)
                     directed_A_matrix, removed_edges = self.create_directed_A_matrix(delay_edge)
                     G_matrices = self.create_directed_G_matrices(directed_A_matrix, removed_edges)
                     D_matrices.append([current_thread_D_matrix, G_matrices])     
@@ -374,14 +373,17 @@ class Network:
         #step 1 remove the edge ( start, end)
         #step 2 for each item in frontier: remove all 1:s in end column expcet for the start row 
         # add all outgoing edges from current item to frontier (add all 1:s in the row for the current item end station)
-        removed_edges = []
-        removed_edges_with_count_dict = {}
+        
+        removed_edges = [] #list of edges that have been removed
+        removed_edges_with_count_dict = {} # dict of removed edges with the count of how many edges they should spread to
         directed_A_matrix = self.A_matrix.copy()
+        
         current_edge = directed_edge
         directed_A_matrix.loc[current_edge[1],current_edge[0]] = 0
 
         removed_first_edge = (current_edge[1], current_edge[0])
         removed_edges.append(removed_first_edge)
+
         froniter = [current_edge] #list of nodes to visit
         visited_notes= [] #list of nodes that have been visited
         while len(froniter) > 0:
@@ -391,15 +393,18 @@ class Network:
             #change all 1:s in the end column to 0 except for the start row
             prev_incomming_edge_value = directed_A_matrix.loc[current_edge[0],current_edge[1]] 
             current_col=  directed_A_matrix.loc[:, current_edge[1]]
-            #get the row index wherre value is >0
+            
             incomming_edges = current_col[current_col >= 1].index
-            #remove index of the start station
             current_node_removed_edges = [x for x in incomming_edges if x != current_edge[0]]
-            test_item = [x for x in removed_edges if x[0] == current_edge[1]]
-            for item in test_item:
+            
+            #get all previously removed edges that have the current node as start
+            current_node_removed_outgoing_edges = [x for x in removed_edges if x[0] == current_edge[1]]
+            for item in current_node_removed_outgoing_edges:
                 removed_edges.remove(item)
+                #add the removed edge to the dict with the count of how many edges it should spread to
                 removed_edges_with_count_dict[item] = len(current_node_removed_edges)
 
+            #set all incomming edges to 0
             directed_A_matrix.loc[:, current_edge[1]] = 0
             directed_A_matrix.loc[current_edge[0],current_edge[1]] = prev_incomming_edge_value
 
@@ -614,11 +619,12 @@ class Network:
     def calculate_G_matrix(self, G_matrix, time_span, n, A_matrix = None, removed_edges = None):
         if A_matrix is None:
             A_matrix = self.A_matrix
-        #looping through all stations
         if removed_edges:
             removed_edges_keys = removed_edges.keys()
         else:
             removed_edges_keys = []
+            
+        #looping through all stations
         for station_name, row_index in self.station_indicies.items():
 
             i_station = self.stations[station_name] #station object of the current row
@@ -634,16 +640,17 @@ class Network:
                     edge_ji = self.edges[(j_station.name, i_station.name)]
                     pji = edge_ji.pij
                     Aji = 1 # set the value to 1 to make sure the node is weighted as 1
-                    
-                    #gå igenom removed edges och hitta edges som har samma start som j_station_name
-                    #rmoved edeges keys [(start, end), (start, end)]
-                    
+                    #if there are removed edges that are incoming to the current station, we need to add the value of the edge to the G matrix
                     edges_to_add = [x for x in removed_edges_keys if x[0] == j_station_name]
                     for edge in edges_to_add:
                         keys_edges = self.edges.keys()
                         if edge in keys_edges:
                             edge_object = self.edges[edge]
                             value_to_add += edge_object.Aij * edge_object.pij * Bj
+                            num_outgoing = removed_edges[edge]
+                            #divide the value by how many nodes the edge should spread to
+                            value_to_add = value_to_add #/num_outgoing
+                       #     print("value to add: ", value_to_add)
         
                 Bj = j_station.fetch_Bi(time_span)
                 
@@ -682,6 +689,75 @@ class Network:
             self.print_comparison_delay_matrix(comparison, print_all=False)
             print(" ")
         return
+        
+          #Visualizes actual vs. predicted delays using network graphs.
+    def visualize_comparative_delays(self, actual_delay, predicted_delay, step, title="Comparative Delay Visualization", cap=0.25):
+        # Function to map delays to colors
+        def get_color(value, cap):
+
+            #If the value is below the cap, returns a neutral color.
+            if abs(value) <= cap:
+                return "#D3D3D3"  # Neutral color for small delays (gray)
+
+            # Color mapping for significant delays
+            color_map = {
+                -15: "#0D47A1", -10: "#1976D2", -5: "#42A5F5", 
+                -3: "#90CAF9", -1: "#E3F2FD", 1: "#FFEBEE", 
+                3: "#FFCDD2", 5: "#E57373", 10: "#D32F2F", 
+                15: "#B71C1C"
+            }
+            
+            if value < 0:
+                for key in sorted(color_map.keys(), reverse=True):
+                    if value >= key:
+                        return color_map[key]
+            else:
+                for key in sorted(color_map.keys()):
+                    if value <= key:
+                        return color_map[key]
+
+            return color_map[key]
+
+        # Create two separate graphs: one for actual delays and one for predicted delays
+        graphs = {"Actual Delay": actual_delay, "Predicted Delay": predicted_delay}
+        
+        for graph_title, delay_array in graphs.items():
+            G = pgv.AGraph(directed=True)
+            # Add nodes with colors based on actual or predicted delays
+            for station_name, row_index in self.station_indicies.items():
+                delay = delay_array[row_index][0]
+                color = get_color(delay, cap)  # Use delay to determine color'
+                G.add_node(station_name, style="filled", fillcolor=color, fontsize=10, margin="0.1,0.1")
+
+            # Add edges from the network
+            for (start, end), _ in self.edges.items():
+                G.add_edge(start, end, penwidth=2, color="gray")
+
+            # Adjust layout for aesthetics
+            #Removed bc of time optimization
+            # G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
+            
+            # Save the graph to a file
+            output_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
+            G.layout(prog="fdp")
+            G.draw(output_path, format="png")
+            print(f"{graph_title} graph saved to {output_path}")
+
+        # Display the graphs side by side using matplotlib
+        _, axes = plt.subplots(1, 2, figsize=(16, 8))
+        for idx, (graph_title, _) in enumerate(graphs.items()):
+            img_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
+            img = plt.imread(img_path)
+            axes[idx].imshow(img)
+            axes[idx].axis("off")
+            axes[idx].set_title(graph_title, fontsize=14)
+
+        plt.suptitle(title, fontsize=16)
+        plt.tight_layout()
+        #save the plot as a png      
+        plt.savefig(f"images/compared_delays_step_{step + 1}.png", dpi=300, bbox_inches='tight')
+        return
+
 
 
     # Function that prints the station information of a specific station
@@ -753,70 +829,4 @@ class Network:
         return
     
    
-    #Visualizes actual vs. predicted delays using network graphs.
-    def visualize_comparative_delays(self, actual_delay, predicted_delay, step, title="Comparative Delay Visualization", cap=0.25):
-        # Function to map delays to colors
-        def get_color(value, cap):
-
-            #If the value is below the cap, returns a neutral color.
-            if abs(value) <= cap:
-                return "#D3D3D3"  # Neutral color for small delays (gray)
-
-            # Color mapping for significant delays
-            color_map = {
-                -15: "#0D47A1", -10: "#1976D2", -5: "#42A5F5", 
-                -3: "#90CAF9", -1: "#E3F2FD", 1: "#FFEBEE", 
-                3: "#FFCDD2", 5: "#E57373", 10: "#D32F2F", 
-                15: "#B71C1C"
-            }
-            
-            if value < 0:
-                for key in sorted(color_map.keys(), reverse=True):
-                    if value >= key:
-                        return color_map[key]
-            else:
-                for key in sorted(color_map.keys()):
-                    if value <= key:
-                        return color_map[key]
-
-            return color_map[key]
-
-        # Create two separate graphs: one for actual delays and one for predicted delays
-        graphs = {"Actual Delay": actual_delay, "Predicted Delay": predicted_delay}
-        
-        for graph_title, delay_array in graphs.items():
-            G = pgv.AGraph(directed=True)
-            # Add nodes with colors based on actual or predicted delays
-            for station_name, row_index in self.station_indicies.items():
-                delay = delay_array[row_index][0]
-                color = get_color(delay, cap)  # Use delay to determine color'
-                G.add_node(station_name, style="filled", fillcolor=color, fontsize=10, margin="0.1,0.1")
-
-            # Add edges from the network
-            for (start, end), _ in self.edges.items():
-                G.add_edge(start, end, penwidth=2, color="gray")
-
-            # Adjust layout for aesthetics
-           # G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
-            
-            # Save the graph to a file
-            output_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
-            G.layout(prog="fdp")
-            G.draw(output_path, format="png")
-            print(f"{graph_title} graph saved to {output_path}")
-
-        # Display the graphs side by side using matplotlib
-        _, axes = plt.subplots(1, 2, figsize=(16, 8))
-        for idx, (graph_title, _) in enumerate(graphs.items()):
-            img_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
-            img = plt.imread(img_path)
-            axes[idx].imshow(img)
-            axes[idx].axis("off")
-            axes[idx].set_title(graph_title, fontsize=14)
-
-        plt.suptitle(title, fontsize=16)
-        plt.tight_layout()
-        #save the plot as a png      
-        plt.savefig(f"images/compared_delays_step_{step + 1}.png", dpi=300, bbox_inches='tight')
-        return
-
+  
