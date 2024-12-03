@@ -346,8 +346,9 @@ class Network:
                     delay = delay_item[1]
                     current_thread_D_matrix[row_index] = delay
                     delay_edge = delay_item[0]
-                    directed_A_matrix = self.create_directed_A_matrix(delay_edge)
-                    G_matrices = self.create_directed_G_matrices(directed_A_matrix)
+                    print("DELAY EDGE: ", delay_edge)
+                    directed_A_matrix, removed_edges = self.create_directed_A_matrix(delay_edge)
+                    G_matrices = self.create_directed_G_matrices(directed_A_matrix, removed_edges)
                     D_matrices.append([current_thread_D_matrix, G_matrices])     
         self.D_matrices = D_matrices
         return
@@ -371,21 +372,44 @@ class Network:
         # Remove the outgoing edge that the delay was on 
         # Remove all incoming edges on the current station
         # Move to all the connected stations except the station where the delay came from, and do the same to them. 
-        #step 1 remove the edge (end, start)
+        #step 1 remove the edge ( start, end)
         #step 2 for each item in frontier: remove all 1:s in end column expcet for the start row 
         # add all outgoing edges from current item to frontier (add all 1:s in the row for the current item end station)
-
+        #print("DIRECTED EDGE: ", directed_edge)
+        removed_edges = []
+        removed_edges_with_count_dict = {}
         directed_A_matrix = self.A_matrix.copy()
         current_edge = directed_edge
         directed_A_matrix.loc[current_edge[1],current_edge[0]] = 0
+
+        removed_first_edge = (current_edge[1], current_edge[0])
+        removed_edges.append(removed_first_edge)
+        #print("removed edges")
+        #print(removed_edges)
         froniter = [current_edge] #list of nodes to visit
         visited_notes= [] #list of nodes that have been visited
         while len(froniter) > 0:
-            current_edge = froniter.pop(0) #(end, start)
+            current_edge = froniter.pop(0) #(start, end)
+      #      print("Current edge: ", current_edge)
             visited_notes.append(current_edge[1])
             
             #change all 1:s in the end column to 0 except for the start row
             prev_incomming_edge_value = directed_A_matrix.loc[current_edge[0],current_edge[1]] 
+            current_col=  directed_A_matrix.loc[:, current_edge[1]]
+            #get the row index wherre value is >0
+            incomming_edges = current_col[current_col >= 1].index
+            #remove index of the start station
+            current_node_removed_edges = [x for x in incomming_edges if x != current_edge[0]]
+       #     print("removed edges for", current_edge[1])
+       #     print(current_node_removed_edges)
+            test_item = [x for x in removed_edges if x[0] == current_edge[1]]
+        #    print("looping test item")
+         #   print(test_item)
+            for item in test_item:
+     #           print("item: ", item)
+                removed_edges.remove(item)
+                removed_edges_with_count_dict[item] = len(current_node_removed_edges)
+
             directed_A_matrix.loc[:, current_edge[1]] = 0
             directed_A_matrix.loc[current_edge[0],current_edge[1]] = prev_incomming_edge_value
 
@@ -393,19 +417,36 @@ class Network:
             
             outgoings_indicies = outgoings_row[outgoings_row >= 1].index 
             outgoings_edges_count = len(outgoings_indicies)
+
+            for station_name in current_node_removed_edges:
+                #TO, FROM
+                current_removed_edge = (station_name, current_edge[1])
+          #      print("adding removed edge: ", current_removed_edge, " to removed edges")
+                removed_edges.append(current_removed_edge)
+
             if outgoings_edges_count != 0:
                 weight = 1/outgoings_edges_count
             else: 
                 weight = 0
             for index in outgoings_indicies:
                 directed_A_matrix.loc[current_edge[1], index] += weight
-            
+        
+
             new_edges = [(current_edge[1], x) for x in outgoings_indicies if x != current_edge[0]] 
             new_edges = [x for x in new_edges if x[1] not in visited_notes]
             new_edges = [x for x in new_edges if x[1] not in [y[1] for y in froniter]]
             froniter += new_edges
+        #    print("\n")
   
-        return directed_A_matrix
+       # print("creating dict done")
+       # print("removed edges left")
+       # print(removed_edges)
+       # print("removed dict item")
+        keys = removed_edges_with_count_dict.keys()
+      #  for key in keys:
+       #     print(key, removed_edges_with_count_dict[key])
+       # print("\n")
+        return directed_A_matrix, removed_edges_with_count_dict
 
     # Function that executes a time step 
     def predict_time_step(self):
@@ -450,8 +491,8 @@ class Network:
                 
             G_matrix = pd.DataFrame(G_matrix, index=self.stations, columns=self.stations)
             difference = np.matmul(G_matrix, current_delay)
-
             difference = np.array(difference)
+
             delay_thread[0] = current_delay + difference
 
         total_delay = np.zeros((self.N,1))
@@ -570,7 +611,10 @@ class Network:
         return
     
     # Function that extracts the G matrices for each hour of the day
-    def create_directed_G_matrices(self, A_matrix):
+    def create_directed_G_matrices(self, A_matrix, removed_edges):
+     #   print("creating directed G matrices")
+     #   print("xxxxxxxx")
+     #   print(A_matrix)
         G_matrices = {}
         n = self.N
         
@@ -586,37 +630,107 @@ class Network:
         
         #populating the G matrices
         for time_span in G_matrices.keys():
-            G_matrices[time_span] = self.calculate_G_matrix(G_matrices[time_span], time_span, n, A_matrix = A_matrix)
+            G_matrices[time_span] = self.calculate_G_matrix(G_matrices[time_span], time_span, n, A_matrix = A_matrix, removed_edges = removed_edges)
        
         return G_matrices
 
     # Function that calculates the G matrix for a specific time span
     # G_matrix should be an nxn empty matrix, time span should be a tuple of two times in Timestamp format only (0,1), (1,2) etc
-    def calculate_G_matrix(self, G_matrix, time_span, n, A_matrix = None):
+    def calculate_G_matrix(self, G_matrix, time_span, n, A_matrix = None, removed_edges = None):
         if A_matrix is None:
             A_matrix = self.A_matrix
-    
+     #   elif time_span[0].hour == 8 and time_span[1].hour == 9:
+     #       print("Using directed A matrix")
+     #       print("-------------------------")
         #looping through all stations
+        if removed_edges:
+            removed_edges_keys = removed_edges.keys()
+        else:
+            removed_edges_keys = []
         for station_name, row_index in self.station_indicies.items():
 
             i_station = self.stations[station_name] #station object of the current row
+        #    if time_span[0].hour == 8 and time_span[1].hour == 9:
+         #       print("GOING THROUGH I STATIION: ", i_station.name)
             #going throgh all stations again for the values of the G matrix columns for the current row
             for col_index in range(n):
                 Aji = A_matrix.iloc[col_index,row_index]
                 j_station_name = [key for key, value in self.station_indicies.items() if value == col_index][0]
                 j_station = self.stations[j_station_name] #stati
+          #      if time_span[0].hour == 8 and time_span[1].hour == 9:
+           #         print("CURRENT J STATION: ", j_station.name)
                 pji = 0
+                value_to_add = 0
                 if Aji >= 1: #if there is an edge from j to i, we extraact the values of the edge
+                    Bj = j_station.fetch_Bi(time_span)
                     edge_ji = self.edges[(j_station.name, i_station.name)]
                     pji = edge_ji.pij
-
+                  
+          #          if j_station_name == 'Uppsala norra' and  i_station.name == 'Brunna'and time_span[0].hour == 16 and time_span[1].hour == 17:
+           #             print("Aij: ", Aji)
+            #            print("station i ", i_station.name, "to j", j_station_name)
+             #           print("pji: ", pji)
+              #      if j_station_name == 'Brunna' and  i_station.name == 'Uppsala norra'and time_span[0].hour == 16 and time_span[1].hour == 17:
+               #         print("Aij: ", Aji)
+                #        print("station i", i_station.name, "to j", j_station_name)
+                 #       print("pji: ", pji)
+                    Aji = 1 # set the value to 1 to make sure the node is weighted as 1
+                    
+                    #gå igenom removed edges och hitta edges som har samma start som j_station_name
+                    #rmoved edeges keys [(start, end), (start, end)]
+                    
+                    edges_to_add = [x for x in removed_edges_keys if x[0] == j_station_name]
+           #         if time_span[0].hour == 8 and time_span[1].hour == 9:
+            #            print("edges to add for edge i station: ", i_station.name, "j station: ", j_station_name)
+             #           print(edges_to_add)
+                    for edge in edges_to_add:
+              #          if time_span[0].hour == 16 and time_span[1].hour == 17:
+               #             print("edge in edges to add")
+                #            print(edge)
+                        keys_edges = self.edges.keys()
+                        if edge in keys_edges:
+                            edge_object = self.edges[edge]
+              #          if time_span[0].hour == 8 and time_span[1].hour == 9:
+               #             print("edge from: ", edge_object.i, "to: ", edge_object.j)
+                        # value = Aji * pji * Bj - Bj * kronecker
+                            edge_Aij = edge_object.Aij
+                            edge_pij = edge_object.pij
+                            value_to_add += edge_object.Aij * edge_object.pij * Bj
+                #        if time_span[0].hour == 8 and time_span[1].hour == 9:
+                 #           print("edge Aij: ", edge_Aij, "edge pij: ", edge_pij)
+                  #          print("Bj: ", Bj)
+                   #         print("value to add", value_to_add)
+                    #        print("\n")
+        
                 Bj = j_station.fetch_Bi(time_span)
                 
                 #kroneker value should only be 1 if the row and col stations are the same
                 kronecker = 1 if col_index == row_index else 0
                 #calculating the value of the G matrix at the current row and column
-                value = Aji * pji * Bj - Bj * kronecker
+                value = Aji * pji * Bj - Bj * kronecker + value_to_add
+           #     if j_station_name == 'Brunna' and  i_station.name == 'Uppsala norra'and time_span[0].hour == 16 and time_span[1].hour == 17:
+           #         print("station i ", i_station.name, "to j ", j_station_name)
+           #         print("value", value)
+           #         print("\n")
+           #     if j_station_name == 'Uppsala norra' and  i_station.name == 'Brunna'and time_span[0].hour == 16 and time_span[1].hour == 17:
+           #         print("station i ", i_station.name, "to j ", j_station_name)
+           #         Bj = j_station.fetch_Bi(time_span)
+           #         edge_ji = self.edges[(j_station.name, i_station.name)]
+           #         pji = edge_ji.pij
+           #         print("Aij: ", Aji)
+           #         print("pji: ", pji)
+           #         print("Bj: ", Bj)
+           #         print("value", value)
+           #         print("\n")
                 G_matrix[row_index][col_index] = value
+               # if time_span[0].hour == 8 and time_span[1].hour == 9:
+               #     
+               #     print("done with i station: ", i_station.name, "j station: ", j_station_name)
+               #     print("\n")
+      #  if time_span[0].hour == 8 and time_span[1].hour == 9:
+      #      print("G matrix for time span: ", time_span)
+      #      print(G_matrix)
+      #      print("\n")
         return G_matrix
     
     # Evaluates the network against the actual data.

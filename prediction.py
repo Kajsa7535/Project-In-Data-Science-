@@ -6,9 +6,10 @@ from network.model import Network
 file_path = r"data/test_network_week_45_bigger.csv"
 file_path_smaller = r"data/smaller_test_network.csv"
 df_network = pd.read_csv(file_path, sep=',', encoding='utf-8')
+df_network = df_network[df_network["Tåguppdrag"] == 22]
 
 network = Network()
-start_time = pd.to_datetime("2019-03-27 11:55:00")
+start_time = pd.to_datetime("2019-03-27 16:39:00")
 network.initate_network(df_network, time_step=1, network_start_time=start_time)
 #network.print_network_info()
 print("initial delay matrix")
