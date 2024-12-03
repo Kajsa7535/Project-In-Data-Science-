@@ -740,7 +740,7 @@ class Network:
         print("Network start time: ", self.current_time)
         print("-------------------------")
 
-        for _ in range(time_steps):
+        for step in range(time_steps):
 
             true_delay = self.fetch_D_matrix(df) #matrix that holds the true delay of the data in df
             true_delay = np.round(true_delay, 3)#round the delay matrix to 3 decimals
@@ -876,11 +876,11 @@ class Network:
                 G.add_edge(start, end, penwidth=2, color="gray")
 
             # Adjust layout for aesthetics
-            G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
+           # G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
             
             # Save the graph to a file
             output_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
-            G.layout(prog="neato")
+            G.layout(prog="fdp")
             G.draw(output_path, format="png")
             print(f"{graph_title} graph saved to {output_path}")
 
