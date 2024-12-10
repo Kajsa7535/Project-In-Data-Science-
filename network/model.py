@@ -317,6 +317,13 @@ class Network:
         #TODO add a check for the first time that includes delay
         all_times = df['UtfAvgTid'].dropna()
         first_time_stamp = all_times.min()
+        
+        first_time_row = df[df['UtfAvgTid'] == first_time_stamp]
+        # If the delay is 0 or negative, find the next time minimum time stamp until a positive delay is found
+        while first_time_row['AvgFörsening'].sum() <=0 :
+            first_time_stamp = all_times[all_times > first_time_stamp].min()
+            first_time_row = df[df['UtfAvgTid'] == first_time_stamp]
+            
         return pd.to_datetime(first_time_stamp)
 
     # Calculates the D matrix by going through the station and extracts the delays
