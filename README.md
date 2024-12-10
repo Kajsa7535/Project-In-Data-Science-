@@ -15,6 +15,7 @@ A project to predict delay propogation in the Swedish railway network using a di
 ```
 ├── data # Contains network data csv files
 ├── data_extraction # Data extraction files for creating small
+│   ├── create_test_network_U_Fln_Cst_Ga.py # Creates the test network create_test_network_U_Fln_Cst_Ga.csv
 ├── images # Generated images from the prediction
 ├── network # Network files and classes
 ├── prediction.py # Main file for running the prediction

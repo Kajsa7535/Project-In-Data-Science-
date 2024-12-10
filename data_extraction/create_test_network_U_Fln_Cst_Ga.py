@@ -1,7 +1,5 @@
 
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
 import os
 import preprocessing
@@ -20,8 +18,6 @@ file_path = '../data/month_data.csv'
 df = pd.read_csv(file_path, sep=';', encoding='utf-8')
 
 specific_date = '2019-03-27'  # Change this to desired date
-start_time = '7:00:00' #select peak hours of the day
-end_time = '19:00:00'
 
 #filter the dataset to specific date and get a copy
 filtered_for_date=df[(df['Datum_PAU']== specific_date)].copy()
@@ -30,11 +26,20 @@ filtered_for_date=df[(df['Datum_PAU']== specific_date)].copy()
 filtered_for_date['PlanAnkTid'] = pd.to_datetime(filtered_for_date['PlanAnkTid'],errors='coerce')
 filtered_for_date['PlanAvgTid'] = pd.to_datetime(filtered_for_date['PlanAvgTid'],errors='coerce')
 
-#filter the dataset for the peak time
-filtered_for_time = filtered_for_date[((filtered_for_date['PlanAnkTid'].dt.time >= pd.to_datetime(start_time).time()) &
+filter_for_time_bool = False  # Set to True to filter by peak hours. Will result in some missing data for a few routes (no final station row)
+
+if filter_for_time_bool:
+    start_time = '7:00:00' #select peak hours of the day
+    end_time = '19:00:00'
+    #filter the dataset for the peak time
+    filtered_for_time = filtered_for_date[((filtered_for_date['PlanAnkTid'].dt.time >= pd.to_datetime(start_time).time()) &
                                       (filtered_for_date['PlanAnkTid'].dt.time <= pd.to_datetime(end_time).time())) | 
                                       ((filtered_for_date['PlanAvgTid'].dt.time >= pd.to_datetime(start_time).time()) &
                                       (filtered_for_date['PlanAvgTid'].dt.time <= pd.to_datetime(end_time).time()))]
+else:
+    #if not filtering for peak hours, use the filtered for date dataset
+    filtered_for_time = filtered_for_date
+
 
 #filter for the platform
 filtered_for_platform= filtered_for_time[(filtered_for_time['Ankomstplats']=='Uppsala c') | ( filtered_for_time['Avgångsplats']=='Uppsala c' )]
@@ -50,10 +55,6 @@ filtered_for_unique_mission_for_given_station = filtered_for_platform[
 
 # Extract the unique Train mission from the filtered dataset
 unique_missions = filtered_for_unique_mission_for_given_station['Tåguppdrag'].unique()
-
-# Display the unique Train missions
-print("Unique train mission for specified stations:", unique_missions)
-
 
 #excluding train missions as they do not show Första or Sista
 excluded_missions= [13,51,882,806,8417,8419]
@@ -87,7 +88,6 @@ for mission_type in mission_types:
                 next_station = filtered_for_time[(filtered_for_time['Avgångsplats'] == next_row['Ankomstplats']) &
                                   (filtered_for_time['Tåguppdrag'] == mission_type)]
                 
-
                 if not next_station.empty:
                     next_stop = next_station.iloc[0]['Ankomstplats']
                     current_route.append(next_stop)
@@ -110,74 +110,70 @@ for mission_type in mission_types:
 # Save the filtered rows used to generate the routes into a new DataFrame
 filtered_rows_df = pd.DataFrame(all_filtered_rows)
 
-
-
-
 #fill missing values and do preprocessing
-
 preprocessing.create_ids(filtered_rows_df)
 preprocessing.missing_utfAvgTid(filtered_rows_df)
 
 # Save the DataFrame to a CSV file
-output_rows_file_name = 'test_network_week_45_bigger.csv'
+output_rows_file_name = 'test_network_U_Fln_Cst_Ga_no_time.csv'
 filtered_rows_df.to_csv('../data/' + output_rows_file_name, index=False, encoding='utf-8-sig')
+ 
+
+print_statisics = False # Set to True to display statistics
+
+if print_statisics:
+    # Display the routes for each mission
+    for mission, routes in all_routes.items():
+        print(f"\nRoutes for {mission}:")
+        for route in routes:
+            print("Route:", route)
 
 
-# Display the routes for each mission
-for mission, routes in all_routes.items():
-    print(f"\nRoutes for {mission}:")
-    for route in routes:
-        print("Route:", route)
+    #Descriptive statistic of test network
+    print('Number of unique train missions used for test network: ',len(unique_missions))
 
+    #total records included in the test network
+    print('Number of total records in the test network:',len(filtered_rows_df))
 
+    #number of unique depature stations
+    print('Number of unique depature stations in the test network:',len(filtered_rows_df['Avgångsplats'].unique()))
 
+    #number of unique arrival stations
+    print('Number of unique arrival stations in the test network:',len(filtered_rows_df['Ankomstplats'].unique()))
 
-#Descriptive statistic of test network
-print('Number of unique train missions used for test network: ',len(unique_missions))
+    #number of unique routes
+    print('Number of unique routes available in the test network:',len(filtered_rows_df[['Ankomstplats','Avgångsplats']].drop_duplicates()))
 
+    #number of depature delays
+    print('Number of depature delays:',len(filtered_rows_df[filtered_rows_df['AvgFörsening'] > 0].dropna(subset=['AvgFörsening'])))
 
-#total records included in the test network
-print('Number of total records in the test network:',len(filtered_rows_df))
+    #maximum depature delay across all routes
+    print('Maximum depature delay from a station across all routes(minutes):', max(filtered_rows_df['AvgFörsening'] ))
 
-#number of unique depature stations
-print('Number of unique depature stations in the test network:',len(filtered_rows_df['Avgångsplats'].unique()))
+    #early depature across all routes
+    print('Maximum early depature from a station across all routes(minutes):',min(filtered_rows_df['AvgFörsening']))
 
-#number of unique arrival stations
-print('Number of unique arrival stations in the test network:',len(filtered_rows_df['Ankomstplats'].unique()))
+    #number of arrival delays
+    print('Number of arrival delays:',len(filtered_rows_df[filtered_rows_df['AnkFörsening']>0].dropna(subset=['AnkFörsening'])))
 
-#number of unique routes
-print('Number of unique routes available in the test network:',len(filtered_rows_df[['Ankomstplats','Avgångsplats']].drop_duplicates()))
+    #maximum arrival delay across all routes
+    print('Maximum arrival delay to a station across all routes(minutes):', max(filtered_rows_df['AnkFörsening'] ))
 
-#number of depature delays
-print('Number of depature delays:',len(filtered_rows_df[filtered_rows_df['AvgFörsening'] > 0].dropna(subset=['AvgFörsening'])))
+    #early arrival across all routes
+    print('Maximum early arrival to a station across all routes(minutes):',min(filtered_rows_df['AnkFörsening']))
 
-#maximum depature delay across all routes
-print('Maximum depature delay from a station across all routes(minutes):', max(filtered_rows_df['AvgFörsening'] ))
+    #Number of edges delay in travel time
+    print('Number of edges delay in travel time: ', len(filtered_rows_df[filtered_rows_df['FörseningUppehållAvgång']>0]))
 
-#early depature across all routes
-print('Maximum early depature from a station across all routes(minutes):',min(filtered_rows_df['AvgFörsening']))
+    #maximum travel time delay across edges
+    print('Maximum travel time delay within edges:',max(filtered_rows_df['FörseningUppehållAvgång'].dropna()))
 
-#number of arrival delays
-print('Number of arrival delays:',len(filtered_rows_df[filtered_rows_df['AnkFörsening']>0].dropna(subset=['AnkFörsening'])))
-
-#maximum arrival delay across all routes
-print('Maximum arrival delay to a station across all routes(minutes):', max(filtered_rows_df['AnkFörsening'] ))
-
-#early arrival across all routes
-print('Maximum early arrival to a station across all routes(minutes):',min(filtered_rows_df['AnkFörsening']))
-
-#Number of edges delay in travel time
-print('Number of edges delay in travel time: ', len(filtered_rows_df[filtered_rows_df['FörseningUppehållAvgång']>0]))
-
-#maximum travel time delay across edges
-print('Maximum travel time delay within edges:',max(filtered_rows_df['FörseningUppehållAvgång'].dropna()))
-
-#Number of trains with no delays
-no_delay_count = len(filtered_rows_df[
-            (filtered_rows_df['AnkFörsening']<=0) & 
-             (filtered_rows_df['AvgFörsening']<=0) & 
-             (filtered_rows_df['FörseningUppehållAvgång']<=0)
-             ]
-             )
-print('Number of trains with no delays:',no_delay_count)
+    #Number of trains with no delays
+    no_delay_count = len(filtered_rows_df[
+                (filtered_rows_df['AnkFörsening']<=0) & 
+                (filtered_rows_df['AvgFörsening']<=0) & 
+                (filtered_rows_df['FörseningUppehållAvgång']<=0)
+                ]
+                )
+    print('Number of trains with no delays:',no_delay_count)
 

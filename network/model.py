@@ -10,43 +10,40 @@
 # - rij =  for all trains that do not have i as end station, calculate the probability of those trains going to j (in a fraction)
 #     Note: If a train has i as first station it will not be counted in rij even if its going to j. Only trains that are going to i and then j are included
 # - sj = for each train that pass through station j, calculate the number of trains that end at j. (On that edge)
-# - T(i,j) = extract from data
 #
 
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 import pygraphviz as pgv
 import copy
+from network.utils import create_24_hour_dict 
 
-pd.set_option('display.max_rows', None)  # Show all rows
+pd.set_option('display.max_rows', None)  # Show all rows when printing dataframe, remove this if you want to limit the output
 
 
 class Station:
     def __init__(self, name, id):
         self.name = name
         self.id = id
-        self.delay = 0 # total delay at the station at the current time step, maybe this needs to be a list so we store the delay for each time step
+        self.delay = 0 # total delay at the station at the current time step
         self.delay_origins = [] # list of delays for each train that is going to this station
-        self.T_ij = []  # set of trains moving to station i at time t #TODO
         self.N_out = [] # set of stations to which there is a edge from station i (neightbours out)
         self.N_in = [] # set of stations from which there is an edge to station i (neighbours in)
         self.Bis = None # turnover rate dict of Bi for each hour of the day
-        self.si = None #fraction of trains on the edge towards this station that end at this station
+        self.si = None #fraction of trains on the edge towards this station that end at this station, currently not used but it exists for future work.
 
+    # Function that initiates the station with the data from the dataframe
     def initiate_station(self, df, network_start_time):
-        #rows are all trains that are going to this station
-        rows = df[df['Ankomstplats'] == self.name]
-        self.si = self.get_si(rows)
         self.delay = self.calculate_delay(df, network_start_time)
         return
 
     # Function that finds the delay of the station at the current network time
     def calculate_delay(self, df, network_time):
         #rows are all trains that are going to this station
-        rows = df[df['Ankomstplats'] == self.name]        
+        rows = df[df['Ankomstplats'] == self.name]
+        #filtering to only include trains that arrive after the network time and before or during the network time. That is: the trains that are in movement at the network time       
         rows = rows[(rows['UtfAnkTid'] > network_time) & (rows['UtfAvgTid'] <= network_time)]
         if len(rows) == 0:
             return 0
@@ -56,48 +53,33 @@ class Station:
         #sum of all of the incoming trains delays
         delay = rows['AvgFörsening'].sum()
 
+        #if any delay exists
         if delay > 0:
-            delayed_rows = rows[abs(rows['AvgFörsening']) > 0]
+            delayed_rows = rows[rows['AvgFörsening'] > 0]
             for row in delayed_rows.iterrows():
+                #get each individual delay and the origin of the delay
                 delay_item = ((row[1]['Avgångsplats'], row[1]['Ankomstplats']), row[1]['AvgFörsening']) #((start, end), delay)
                 if delay_item not in self.delay_origins:
+                    #add the delay to the list of delays
                     self.delay_origins.append(delay_item)
         return delay
-
-
-    # Function that finds fraction of trains on the edges towards this station that end at this station
-    def get_si(self, rows):
-        #rows are all rows that are going to this station
-        if len(rows) == 0:
-            return 0
-        final_station_rows = rows[rows['UppehållstypAnkomst'] == 'Sista']
-        total_rows = len(rows)
-        final_rows = len(final_station_rows)
-        return final_rows/total_rows
     
-    # Creates and initiates Bi dictionary, for now creates one Bi for every hour (00 - 23)
+    # Creates and initiates Bi (the turnover rate) dictionary, for now creates one Bi for every hour (00 - 23)
     def initiate_Bis(self, edges): 
-        bi_dict = {}
-
-        for i in range(24): # creates 24 intervals, one for every hour
-            start_time = pd.to_datetime(f"2019-03-31 {i}:00:00.000").time()
-            if i == 23:
-                end_time = pd.to_datetime(f"2019-03-31 00:00:00.000").time()
-            else:
-                end_time = pd.to_datetime(f"2019-03-31 {i+1}:00:00.000").time()
-         
-            bi_dict[(start_time, end_time)] = 0
-        
+        #create a dictionary with 24 hours as keys and 0 as values
+        bi_dict = create_24_hour_dict()
         for time_span in bi_dict.keys(): # For every hour, calculate the individual Bi
             bi_dict[time_span] = self.calculate_Bi(edges, time_span)
-            
+        
+        #setting the Bi dict
         self.Bis = bi_dict
         return
 
-    
     #Function that takes all edges that are incoming to this station, divides the sum of frequencies by the sum of frequencies times the average time
     def calculate_Bi(self, edges, time_span):
+        # Get all edges that are incoming to this station
         incomming_edges = [value for key, value in edges.items() if key[1] == self.name]
+        
         sum_of_freq = 0
         sum_of_freq_and_time = 0
 
@@ -113,6 +95,17 @@ class Station:
         else:
             return  sum_of_freq/sum_of_freq_and_time
 
+    # Function that finds fraction of trains on the edges towards this station that end at this station
+    # Currently not used, but is created for future use.
+    def calculate_si(self, rows):
+        #rows are all rows that are going to this station
+        if len(rows) == 0:
+            return 0
+        final_station_rows = rows[rows['UppehållstypAnkomst'] == 'Sista']
+        total_rows = len(rows)
+        final_rows = len(final_station_rows)
+        return final_rows/total_rows
+
     def set_N_in(self, neighbours_in):
         self.N_in = neighbours_in
     
@@ -122,6 +115,9 @@ class Station:
     def fetch_Bi(self, time_span):
         value = self.Bis[time_span]
         return value
+    
+    def fetch_Si(self):
+        return self.si
     
     def print_Bi(self):
         print("Bi:")
@@ -135,44 +131,53 @@ class Station:
 
 class Edge: 
     def __init__(self, id, start, end, adj_number):
-        self.id = id #edge id
-        self.i = start #station i = start
+        self.id = id # edge id
+        self.i = start # station i = start
         self.j = end # station j = end
-        self.Aij = adj_number #always 1 for edged that exists, might be redundant
-        self.fijs = None # #dict of frquencies for each hour of the day
+        self.Aij = adj_number # always 1 for edges that exists
+        self.fijs = None # dict of frquencies for each hour of the day
         self.tijs = None # dict of average travel times for each hour of the day
         self.pij = None # fraction of trains to i that continues to j. It is a probability.
-        self.rij = None # fraction of trains to i that continue to j if they do not end at i
-    
-    #function to fetch the frequency of trains from i to j at a specific time span
-    #time span is a tuple of two times in Timestamp format, needs to in format of (0,1), (1,2) etc
-    def fetch_tij(self, time_span):
-        value = self.tijs[time_span]
-        return value
-    
-    #function to fetch the frequency of trains from i to j at a specific time span
-    #time span is a tuple of two times in Timestamp format, needs to in format of (0,1), (1,2) etc
-    def fetch_fij(self, time_span):
-        value = self.fijs[time_span]
-        return value
+        self.rij = None # fraction of trains to i that continue to j if they do not end at i. Currently not used, but exists for future use
     
     #initiate the static values of the edge
     def initiate_edge(self, df):
-        rows = df[(df['Ankomstplats'] == self.i) | (df['Avgångsplats'] == self.i)] #trains that either arrive at i or depart at i. TODO: Should do some check on timings also?
-        self.pij = self.get_pij(rows)
-        self.rij = self.get_rij(df)
+        rows = df[(df['Ankomstplats'] == self.i) | (df['Avgångsplats'] == self.i)] #trains that either arrive at i or depart at i.
+        self.pij = self.calculate_pij(rows)
         
         rows = df[(df['Avgångsplats'] == self.i) & (df['Ankomstplats'] == self.j)] #trains that depart from i and arrive at j
         #getting values for the frequency and average travel time for each hour of the day
-        frequency_dict, time_span_dict = self.get_time_span_dicts(rows)
-
+        self.initiate_frequency_dict(rows)
+        self.initiate_avg_travel_time_dict(rows)
+        return
+    
+    #function to get the frequency of trains from i to j at a specific time span, stores the frequency in a dict with the time span as key (start, end) and the frequency as value
+    def initiate_frequency_dict(self, rows):
+        frequency_dict = create_24_hour_dict()
+        
+        #populating frequency dict
+        for time_span in frequency_dict.keys():
+            freq = self.calculate_fij(rows, time_span)
+            frequency_dict[time_span] = freq
+        
         self.fijs = frequency_dict
-        self.tijs = time_span_dict
+        return 
+    
+    #function to get the averiage travel time of trains from i to j at a specific time span, stores the time in a dict with the time span as key (start, end) and the frequency as value
+    def initiate_avg_travel_time_dict(self, rows):
+        avg_time_dict =  create_24_hour_dict()
+        
+        #populating time span dict
+        for time_span in avg_time_dict.keys():
+            avg_time = self.calculate_average_travel_time(rows, time_span)
+            avg_time_dict[time_span] = avg_time
+        
+        self.tijs = avg_time_dict
         return
 
     #calculates the average travel time at a station for all trains that travel from station i to j during the input time span
     #input rows should be the trains that travel from station i to j
-    def get_average_travel_time(self, rows, time_span): 
+    def calculate_average_travel_time(self, rows, time_span): 
         rows = rows.dropna(subset=['UtfAnkTid', 'UtfAvgTid']) #remove rows that do not have a departure time or arrival time
         rows = rows[(rows['UtfAvgTid'].dt.time.between(time_span[0], time_span[1], inclusive='left'))] # filtering to only include trains that depart during the time span
               
@@ -180,20 +185,20 @@ class Edge:
             return 0
         
         time_diff = rows['UtfAnkTid'] - rows['UtfAvgTid'] #calculate the time difference between arrival and departure
-        time_diff = time_diff.dt.total_seconds() / 60 
+        time_diff = time_diff.dt.total_seconds() / 60 #convert to minutes
         
         mean_time_diff = time_diff.mean()
         rounded = np.round(mean_time_diff, 2) #round to two decimals
-        if rounded == 0: #if the mean time difference is 0, return 1 to avoid losing the edge
+        
+        if rounded == 0: #if the mean time difference is 0, return 1 to avoid losing the edge - some rows have the same arrival and departure time which results in 0, but rounding to 1 to avoid losing the edge
             return 1
+        
         return rounded #in minutes
-    
-
     
     #calculates the probability of a train that has gone to i, to continue to j
     #rows should be the trains that either arrive at i or depart at i
-    def get_pij(self, rows): 
-        trains_to_i = rows[rows['Ankomstplats'] == self.i]#all of the train errands that are going to i
+    def calculate_pij(self, rows): 
+        trains_to_i = rows[rows['Ankomstplats'] == self.i]#all of the trains that are going to i
         
         train_errands = trains_to_i['Tåguppdrag'].unique() #getting the unique errands from the trains that are going to i
         incoming_trains_count = 0
@@ -209,11 +214,22 @@ class Edge:
 
         if incoming_trains_count == 0: #to avoid division by 0
             return 0
+        
         return outgoing_i_to_j_count/incoming_trains_count
+
+    #function to calculate the frequency of trains from i to j at a specific time span, in minutes
+    #rows should be all trains that depart from station i to station j
+    #currently checking frequency per hour (60 min)
+    def calculate_fij(self, rows, time_span, minutes=60): 
+        rows = rows[(rows['UtfAvgTid'].dt.time.between(time_span[0], time_span[1], inclusive='left'))]
+        freq = len(rows)/minutes
+        return freq
 
     # calculates the probability of a train that has gone to i, to continue to j if they do not end at i
     # df should be the whole dataframe
-    def get_rij(self, df): 
+    # currently not used, but is created for furture use
+    def calculate_rij(self, df): 
+        #getting the trains that pass i, meaning they arrive at i but do not end there
         trains_that_pass_i = df[(df['Ankomstplats'] == self.i) & (df['UppehållstypAnkomst'] != 'Sista')]
         if len(trains_that_pass_i) == 0: # to avoid division by 0
             return 0
@@ -229,44 +245,17 @@ class Edge:
         rij = trains_to_j_count/len(trains_that_pass_i)
         return rij
     
-    #function to calculate the frequency of trains from i to j at a specific time span, in minutes
-    #minutes should be the time span in minutes
-    #rows should be all trains that depart from station i to station j
-    def get_fij(self, rows, time_span, minutes):
-        rows = rows[(rows['UtfAvgTid'].dt.time.between(time_span[0], time_span[1], inclusive='left'))]
-        freq = len(rows)/minutes
-        return freq
-
-    #function to get the frequency of trains from i to j at a specific time span, stores the frequency in a dict with the time span as key (start, end) and the frequency as value
-    def get_time_span_dicts(self, rows):
-        frequency_dict = {}
-        avg_time_dict = {}
-        
-        minutes = 60 #minutes between each time span, right now it is set to 60 minutes
-        
-        for i in range(24): # If you change this, also change variable "minutes" to the correct time span
-            # OBS: The date does not matter, it is just a place holder, since we only extract the time. BUt it is needed for the to_datetime function
-            start_time = pd.to_datetime(f"2019-03-31 {i}:00:00.000").time()
-            if i == 23:
-                end_time = pd.to_datetime(f"2019-03-31 00:00:00.000").time()
-            else:
-                end_time = pd.to_datetime(f"2019-03-31 {i+1}:00:00.000").time()
-         
-            #initiate values as 0
-            frequency_dict[(start_time, end_time)] = 0 
-            avg_time_dict[(start_time, end_time)] = 0
-        
-        #populating frequency dict
-        for time_span in frequency_dict.keys():
-            freq = self.get_fij(rows, time_span, minutes)
-            frequency_dict[time_span] = freq
-        
-        #populating time span dict
-        for time_span in avg_time_dict.keys():
-            avg_time = self.get_average_travel_time(rows, time_span)
-            avg_time_dict[time_span] = avg_time
-        
-        return frequency_dict, avg_time_dict
+    #function to fetch the frequency of trains from i to j at a specific time span
+    #time span is a tuple of two times in Timestamp format, needs to in format of (0,1), (1,2) etc
+    def fetch_tij(self, time_span):
+        value = self.tijs[time_span]
+        return value
+    
+    #function to fetch the frequency of trains from i to j at a specific time span
+    #time span is a tuple of two times in Timestamp format, needs to in format of (0,1), (1,2) etc
+    def fetch_fij(self, time_span):
+        value = self.fijs[time_span]
+        return value
     
     #function to print the frequencies of the edge
     def print_frequencies(self):
@@ -446,13 +435,13 @@ class Network:
                 G_matrix = self.G_matrices[matrix_keys[i]]#  Extracts the correct G matrix that is in to the correct interval
                 break
             
-        current_delday = self.D_matrix
+        current_delay = self.D_matrix
     
         #matrix multiplication of G and D
-        difference = np.matmul(G_matrix, current_delday)
+        difference = np.matmul(G_matrix, current_delay)
        
         #adds the difference to the current delay
-        self.D_matrix = current_delday + difference
+        self.D_matrix = current_delay + difference
 
         # Goes throigh all all stations and updates the new delay
         for station_name, row_index in self.station_indicies.items():
