@@ -19,6 +19,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pygraphviz as pgv
+import copy
 
 pd.set_option('display.max_rows', None)  # Show all rows
 
@@ -300,7 +301,7 @@ class Network:
         self.time_step = None #time step of the network, delta t
     
     #Initiates the network.
-    def initate_network(self, df, time_step = 1, network_start_time = None):
+    def initiate_network(self, df, time_step = 1, network_start_time = None):
         
         # Comverts the times from string to datetime
         df['UtfAnkTid'] = pd.to_datetime(df['UtfAnkTid'])
@@ -318,7 +319,6 @@ class Network:
 
         self.extract_G_matrices()
         self.extract_D_matrix()
-        
         self.extract_D_matrices()
         return
     
@@ -382,7 +382,7 @@ class Network:
         # add all outgoing edges from current item to frontier (add all 1:s in the row for the current item end station)
         removed_edges = []
         removed_edges_with_count_dict = {}
-        directed_A_matrix = self.A_matrix.copy()
+        directed_A_matrix = copy.deepcopy(self.A_matrix)
         current_edge = directed_edge
         directed_A_matrix.loc[current_edge[1],current_edge[0]] = 0
 
@@ -667,7 +667,7 @@ class Network:
         return G_matrix
     
     # Evaluates the network against the actual data.
-    def evaluate_network(self, df, time_steps, visualize = False):
+    def evaluate_network(self, df, time_steps, visualize = False, directed_delay = True):
         print("Evaluating network")
         print("Time steps: ", time_steps)
         print("Network start time: ", self.current_time)
@@ -678,9 +678,10 @@ class Network:
             true_delay = self.fetch_D_matrix(df) #matrix that holds the true delay of the data in df
             true_delay = np.round(true_delay, 3)#round the delay matrix to 3 decimals
             
-         
-            self.predict_time_step_with_direction() # predict the delay matrix with directions
-            
+            if directed_delay:
+                self.predict_time_step_with_direction() # predict the delay matrix with directions
+            else: 
+                self.predict_time_step()
 
             predicted_delay = self.D_matrix #predicted delay matrix
             predicted_delay = np.round(predicted_delay, 3) #round the delay matrix to 3 decimals
