@@ -49,9 +49,13 @@ class Station:
         rows = rows[(rows['UtfAnkTid'] > network_time) & (rows['UtfAvgTid'] <= network_time)]
         if len(rows) == 0:
             return 0
+
+        #remove negative delays 
+        rows = rows[rows['AvgFörsening'] >= 0]
         #sum of all of the incoming trains delays
         delay = rows['AvgFörsening'].sum()
-        if abs(delay) > 0:
+
+        if delay > 0:
             delayed_rows = rows[abs(rows['AvgFörsening']) > 0]
             for row in delayed_rows.iterrows():
                 delay_item = ((row[1]['Avgångsplats'], row[1]['Ankomstplats']), row[1]['AvgFörsening']) #((start, end), delay)
@@ -311,8 +315,10 @@ class Network:
 
         for station in self.stations:
             self.stations[station].initiate_Bis(self.edges)
+
         self.extract_G_matrices()
         self.extract_D_matrix()
+        
         self.extract_D_matrices()
         return
     
@@ -346,8 +352,8 @@ class Network:
                     delay = delay_item[1]
                     current_thread_D_matrix[row_index] = delay
                     delay_edge = delay_item[0]
-                    directed_A_matrix = self.create_directed_A_matrix(delay_edge)
-                    G_matrices = self.create_directed_G_matrices(directed_A_matrix)
+                    directed_A_matrix, removed_edges = self.create_directed_A_matrix(delay_edge)
+                    G_matrices = self.create_directed_G_matrices(directed_A_matrix, removed_edges)
                     D_matrices.append([current_thread_D_matrix, G_matrices])     
         self.D_matrices = D_matrices
         return
@@ -371,21 +377,35 @@ class Network:
         # Remove the outgoing edge that the delay was on 
         # Remove all incoming edges on the current station
         # Move to all the connected stations except the station where the delay came from, and do the same to them. 
-        #step 1 remove the edge (end, start)
+        #step 1 remove the edge ( start, end)
         #step 2 for each item in frontier: remove all 1:s in end column expcet for the start row 
         # add all outgoing edges from current item to frontier (add all 1:s in the row for the current item end station)
-
+        removed_edges = []
+        removed_edges_with_count_dict = {}
         directed_A_matrix = self.A_matrix.copy()
         current_edge = directed_edge
         directed_A_matrix.loc[current_edge[1],current_edge[0]] = 0
+
+        removed_first_edge = (current_edge[1], current_edge[0])
+        removed_edges.append(removed_first_edge)
         froniter = [current_edge] #list of nodes to visit
         visited_notes= [] #list of nodes that have been visited
         while len(froniter) > 0:
-            current_edge = froniter.pop(0) #(end, start)
+            current_edge = froniter.pop(0) #(start, end)
             visited_notes.append(current_edge[1])
             
             #change all 1:s in the end column to 0 except for the start row
             prev_incomming_edge_value = directed_A_matrix.loc[current_edge[0],current_edge[1]] 
+            current_col=  directed_A_matrix.loc[:, current_edge[1]]
+            #get the row index wherre value is >0
+            incomming_edges = current_col[current_col >= 1].index
+            #remove index of the start station
+            current_node_removed_edges = [x for x in incomming_edges if x != current_edge[0]]
+            test_item = [x for x in removed_edges if x[0] == current_edge[1]]
+            for item in test_item:
+                removed_edges.remove(item)
+                removed_edges_with_count_dict[item] = len(current_node_removed_edges)
+
             directed_A_matrix.loc[:, current_edge[1]] = 0
             directed_A_matrix.loc[current_edge[0],current_edge[1]] = prev_incomming_edge_value
 
@@ -393,19 +413,27 @@ class Network:
             
             outgoings_indicies = outgoings_row[outgoings_row >= 1].index 
             outgoings_edges_count = len(outgoings_indicies)
+
+            for station_name in current_node_removed_edges:
+                #TO, FROM
+                current_removed_edge = (station_name, current_edge[1])
+                removed_edges.append(current_removed_edge)
+
             if outgoings_edges_count != 0:
                 weight = 1/outgoings_edges_count
             else: 
                 weight = 0
             for index in outgoings_indicies:
                 directed_A_matrix.loc[current_edge[1], index] += weight
-            
+        
+
             new_edges = [(current_edge[1], x) for x in outgoings_indicies if x != current_edge[0]] 
             new_edges = [x for x in new_edges if x[1] not in visited_notes]
             new_edges = [x for x in new_edges if x[1] not in [y[1] for y in froniter]]
             froniter += new_edges
   
-        return directed_A_matrix
+        keys = removed_edges_with_count_dict.keys()
+        return directed_A_matrix, removed_edges_with_count_dict
 
     # Function that executes a time step 
     def predict_time_step(self):
@@ -450,8 +478,8 @@ class Network:
                 
             G_matrix = pd.DataFrame(G_matrix, index=self.stations, columns=self.stations)
             difference = np.matmul(G_matrix, current_delay)
-
             difference = np.array(difference)
+
             delay_thread[0] = current_delay + difference
 
         total_delay = np.zeros((self.N,1))
@@ -570,7 +598,7 @@ class Network:
         return
     
     # Function that extracts the G matrices for each hour of the day
-    def create_directed_G_matrices(self, A_matrix):
+    def create_directed_G_matrices(self, A_matrix, removed_edges):
         G_matrices = {}
         n = self.N
         
@@ -586,17 +614,20 @@ class Network:
         
         #populating the G matrices
         for time_span in G_matrices.keys():
-            G_matrices[time_span] = self.calculate_G_matrix(G_matrices[time_span], time_span, n, A_matrix = A_matrix)
+            G_matrices[time_span] = self.calculate_G_matrix(G_matrices[time_span], time_span, n, A_matrix = A_matrix, removed_edges = removed_edges)
        
         return G_matrices
 
     # Function that calculates the G matrix for a specific time span
     # G_matrix should be an nxn empty matrix, time span should be a tuple of two times in Timestamp format only (0,1), (1,2) etc
-    def calculate_G_matrix(self, G_matrix, time_span, n, A_matrix = None):
+    def calculate_G_matrix(self, G_matrix, time_span, n, A_matrix = None, removed_edges = None):
         if A_matrix is None:
             A_matrix = self.A_matrix
-    
         #looping through all stations
+        if removed_edges:
+            removed_edges_keys = removed_edges.keys()
+        else:
+            removed_edges_keys = []
         for station_name, row_index in self.station_indicies.items():
 
             i_station = self.stations[station_name] #station object of the current row
@@ -606,16 +637,32 @@ class Network:
                 j_station_name = [key for key, value in self.station_indicies.items() if value == col_index][0]
                 j_station = self.stations[j_station_name] #stati
                 pji = 0
+                value_to_add = 0
                 if Aji >= 1: #if there is an edge from j to i, we extraact the values of the edge
+                    Bj = j_station.fetch_Bi(time_span)
                     edge_ji = self.edges[(j_station.name, i_station.name)]
                     pji = edge_ji.pij
-
+                  
+                    Aji = 1 # set the value to 1 to make sure the node is weighted as 1
+                    
+                    #gå igenom removed edges och hitta edges som har samma start som j_station_name
+                    #rmoved edeges keys [(start, end), (start, end)]
+                    
+                    edges_to_add = [x for x in removed_edges_keys if x[0] == j_station_name]
+                    for edge in edges_to_add:
+                        keys_edges = self.edges.keys()
+                        if edge in keys_edges:
+                            edge_object = self.edges[edge]
+                            edge_Aij = edge_object.Aij
+                            edge_pij = edge_object.pij
+                            value_to_add += edge_object.Aij * edge_object.pij * Bj
+        
                 Bj = j_station.fetch_Bi(time_span)
                 
                 #kroneker value should only be 1 if the row and col stations are the same
                 kronecker = 1 if col_index == row_index else 0
                 #calculating the value of the G matrix at the current row and column
-                value = Aji * pji * Bj - Bj * kronecker
+                value = Aji * pji * Bj - Bj * kronecker + value_to_add
                 G_matrix[row_index][col_index] = value
         return G_matrix
     
@@ -626,12 +673,15 @@ class Network:
         print("Network start time: ", self.current_time)
         print("-------------------------")
 
-        for _ in range(time_steps):
+        for step in range(time_steps):
 
             true_delay = self.fetch_D_matrix(df) #matrix that holds the true delay of the data in df
             true_delay = np.round(true_delay, 3)#round the delay matrix to 3 decimals
             
+         
             self.predict_time_step_with_direction() # predict the delay matrix with directions
+            
+
             predicted_delay = self.D_matrix #predicted delay matrix
             predicted_delay = np.round(predicted_delay, 3) #round the delay matrix to 3 decimals
 
@@ -646,6 +696,7 @@ class Network:
             comparison = np.concatenate((comparison, comparison_matrix), axis=1)
             self.print_comparison_delay_matrix(comparison, print_all=False)
             print(" ")
+
         return
 
 
@@ -762,11 +813,11 @@ class Network:
                 G.add_edge(start, end, penwidth=2, color="gray")
 
             # Adjust layout for aesthetics
-            G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
+            #G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
             
             # Save the graph to a file
             output_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
-            G.layout(prog="neato")
+            G.layout(prog="fdp")
             G.draw(output_path, format="png")
             print(f"{graph_title} graph saved to {output_path}")
 

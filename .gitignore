@@ -7,3 +7,5 @@ data/*
 network/__pycache__/__init__.cpython-310.pyc
 
 data_extraction/__pycache__/*
+
+images/*
