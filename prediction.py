@@ -10,7 +10,7 @@ df_network = pd.read_csv(file_path, sep=',', encoding='utf-8')
 
 network = Network()
 start_time = pd.to_datetime("2019-03-27 16:39:00")
-network.initate_network(df_network, time_step=1, network_start_time=start_time)
+network.initiate_network(df_network, time_step=1, network_start_time=start_time)
 #network.print_network_info()
 print("initial delay matrix")
 network.print_delay_matrix(print_all=False)
@@ -34,7 +34,7 @@ print(" ")
 
 time_steps = 10
 
-network.evaluate_network(df_network, time_steps, visualize=False)
+network.evaluate_network(df_network, time_steps, visualize=True, directed_delay=False)
 
 #for i in range(time_steps):
 #    network.call_time_step()
