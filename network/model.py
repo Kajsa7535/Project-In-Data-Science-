@@ -245,6 +245,7 @@ class Edge:
         minutes = 60 #minutes between each time span, right now it is set to 60 minutes
         
         for i in range(24): # If you change this, also change variable "minutes" to the correct time span
+            # OBS: The date does not matter, it is just a place holder, since we only extract the time. BUt it is needed for the to_datetime function
             start_time = pd.to_datetime(f"2019-03-31 {i}:00:00.000").time()
             if i == 23:
                 end_time = pd.to_datetime(f"2019-03-31 00:00:00.000").time()
@@ -671,6 +672,7 @@ class Network:
         print("Evaluating network")
         print("Time steps: ", time_steps)
         print("Network start time: ", self.current_time)
+        print("DIRECTED DELAY: ", directed_delay)
         print("-------------------------")
 
         for step in range(time_steps):

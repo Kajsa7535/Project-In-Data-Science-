@@ -1,0 +1,2 @@
+TODO bugs:
+- fix network start time so that it finds the first time WITH a delay not just the first time
