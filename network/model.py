@@ -49,9 +49,13 @@ class Station:
         rows = rows[(rows['UtfAnkTid'] > network_time) & (rows['UtfAvgTid'] <= network_time)]
         if len(rows) == 0:
             return 0
+
+        #remove negative delays 
+        rows = rows[rows['AvgFörsening'] >= 0]
         #sum of all of the incoming trains delays
         delay = rows['AvgFörsening'].sum()
-        if abs(delay) > 0:
+
+        if delay > 0:
             delayed_rows = rows[abs(rows['AvgFörsening']) > 0]
             for row in delayed_rows.iterrows():
                 delay_item = ((row[1]['Avgångsplats'], row[1]['Ankomstplats']), row[1]['AvgFörsening']) #((start, end), delay)
