@@ -47,6 +47,9 @@ color_map = {
 
 # Function to get color based on value
 def get_color(value):
+    if value == 0:
+        return "#D3D3D3"
+
     if value < 0:
         for key in sorted(color_map.keys(), reverse=True):
             if value >= key:
@@ -58,7 +61,7 @@ def get_color(value):
     return color_map[key]
 
 # Number of time steps to visualize
-time_steps = 5
+time_steps = 10
 
     
 # Visualization for time steps
