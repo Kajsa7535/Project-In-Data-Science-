@@ -10,6 +10,14 @@ Project in Data Science 1DL507
 
 A project to predict delay propogation in the Swedish railway network using a diffusion like model with some alteration, including individual delay prediction and directed delay prediction.
 
+The methodology is based on the work in the paper:
+
+Modelling railway delay propagation as diffusion-like spreading
+Dekker, Mark M., Medvedev, Alexey N., Rombouts, Jan, Siudem, Grzegorz, Tupikina, Liubov (2022).
+DOI: 10.1140/epjds/s13688-022-00359-1
+
+Most calculations in the model follow the formulas in the paper, but for directed delays they deviate.
+
 ## File Structure
 
 ```
@@ -44,7 +52,7 @@ It has 1 mandatory argument and 5 optional.
 ### Optional argumnets:
 
 - Network start time: The start time of the prediction you want to make.
-  - Ex: "prediction.py test_network --network_start_time "2019-03-27 16:39" ". The format only needs to be in format "YYYY-MM-DD HH:MM"
+  - Ex: "prediction.py test_network --network_start_time "2019-03-27 16:39" ". The format needs to be in: "YYYY-MM-DD HH:MM"
   - Default value is the first time a delay can be found in the network
 - Numer of time steps to predict: This is how many time steps you want the prediction to do
   - Ex: "prediction.py test_network --time_steps 10"
@@ -58,4 +66,3 @@ It has 1 mandatory argument and 5 optional.
 - Directed delay: This is a flag that decised what model you want to use. If true, the model with directed delay will be used (the delay will mostly only spread forward and not in all directions). If false, the model will use the model that spreads in all directions.
   - Ex: "prediction.py test_network --directed_delay False"
   - Default value is True
-

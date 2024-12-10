@@ -5,7 +5,7 @@ import pygraphviz as pgv
 import copy
 
 
-
+# function to create a dictionary with 24 intervals, one for every hour, the value of each interval is 0 and the key is a tuple with the start and end hour of the interval 
 def create_24_hour_dict():
     bi_dict = {}
 
