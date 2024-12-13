@@ -714,7 +714,6 @@ class Network:
         print(f"Station: {station_name}")
         print(f"Neighbours in: {[neighbour.name for neighbour in station.N_in]}")
         print(f"Neighbours out: {[neighbour.name for neighbour in station.N_out]}")
-        print(f"si: {station.si}")
         station.print_Bi()
         print(" ")
         return

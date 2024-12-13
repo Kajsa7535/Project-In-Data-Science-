@@ -46,9 +46,11 @@ def main(network_name, network_start_time = None, time_steps=10, time_step_size 
     network.initiate_network(df_network, time_step_size, network_start_time=network_start_time)
     print_initial_delay_matrix(network)
 
+    network.print_network_info()
+
     #evaluating the network
-    print("directed delay", directed_delay)
-    network.evaluate_network(df_network, time_steps, visualize=visualize, directed_delay=directed_delay)
+    #print("directed delay", directed_delay)
+    #network.evaluate_network(df_network, time_steps, visualize=visualize, directed_delay=directed_delay)
 
     return
     
