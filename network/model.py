@@ -18,7 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pygraphviz as pgv
 import copy
-from network.utils import create_24_hour_dict 
+from network.utils import create_24_hour_dict, remove_initial_edge, process_current_edge, get_new_edges_to_frontier, calculate_G_matrix_values, find_current_time_G_matrix, get_color
 
 pd.set_option('display.max_rows', None)  # Show all rows when printing dataframe, remove this if you want to limit the output
 
@@ -282,233 +282,58 @@ class Network:
         self.N = 0 # number of stations
         self.stations = {} # dictionary of stations {name: Station}
         self.edges = {} #dict of edges {(start, end): Edge}
-        self.station_indicies = None  # station_indicies = {station: idx}
+        self.station_indices = None  # station_indices = {station: idx}
         self.A_matrix = None # adjacency matrix for the network
         self.G_matrices = None #dict of G matrices for each hour of the day
         self.D_matrix = None #delay matrix for the network at the current time step
         self.D_matrices = None #list that holds each delay matrix with its corresponding G_matrices for the network currently at time step [(D_matrix, [G_matrices]), (D_matrix, [G_matrices])...]
         self.current_time = None #the current time of the network
-        self.time_step = None #time step of the network, delta t
+        self.time_step_size = None #time step of the network, delta t
     
     #Initiates the network.
-    def initiate_network(self, df, time_step = 1, network_start_time = None):
+    def initiate_network(self, df, time_step_size = 1, network_start_time = None):
         
-        # Comverts the times from string to datetime
+        # Converts the times from string to datetime
         df['UtfAnkTid'] = pd.to_datetime(df['UtfAnkTid'])
         df['UtfAvgTid'] = pd.to_datetime(df['UtfAvgTid'])
     
-        self.time_step = time_step
-        if network_start_time is None:
+    
+        self.time_step_size = time_step_size
+        # If there is not input time, extract the first time in the network that has a delay
+        if network_start_time is None: 
             network_start_time = self.extract_start_time(df) 
+
+        #set the start time of the network and extract all stations and edges    
         self.current_time = network_start_time
         self.extract_stations(df)
-        self.extract_edges(df)
-
+        self.extract_edges_and_A_matrix(df)
+        
+        #initiate the Bi values for each station with the data from the edtes
         for station in self.stations:
             self.stations[station].initiate_Bis(self.edges)
-
+        
+        #initiate the D matrix and the D matrices
         self.extract_G_matrices()
         self.extract_D_matrix()
         self.extract_D_matrices()
         return
     
-    # Extract the first time that exists in the data
+    # Extract the first time that exists in the data with a delay
     def extract_start_time(self, df):
-        #TODO add a check for the first time that includes delay
+        
         all_times = df['UtfAvgTid'].dropna()
         first_time_stamp = all_times.min()
-        
-        first_time_row = df[df['UtfAvgTid'] == first_time_stamp]
+
+        #get the rows with the first time stamp
+        first_time_rows = df[df['UtfAvgTid'] == first_time_stamp]
         # If the delay is 0 or negative, find the next time minimum time stamp until a positive delay is found
-        while first_time_row['AvgFörsening'].sum() <=0 :
+        while first_time_rows['AvgFörsening'].sum() <=0 :
+            #getting the minimum time stamp that is larger than the current first time stamp
             first_time_stamp = all_times[all_times > first_time_stamp].min()
-            first_time_row = df[df['UtfAvgTid'] == first_time_stamp]
-            
+            first_time_rows = df[df['UtfAvgTid'] == first_time_stamp]
+
         return pd.to_datetime(first_time_stamp)
 
-    # Calculates the D matrix by going through the station and extracts the delays
-    def extract_D_matrix(self):
-        D_matrix = np.zeros((self.N,1))
-        for station_name, row_index in self.station_indicies.items():
-            station = self.stations[station_name]
-            #station delay matrix is the delay at the station at the start time
-            D_matrix[row_index] = station.delay
-        self.D_matrix = D_matrix
-        return
-    
-    # Calculates the D matrix by going through the station and extracts the delays
-    def extract_D_matrices(self):
-        D_matrices = []
-        for station_name, row_index in self.station_indicies.items():
-            station = self.stations[station_name]
-            #station delay matrix is the delay at the station at the start time
-            if len(station.delay_origins) > 0:
-                delays = station.delay_origins
-                for delay_item in delays:
-                    current_thread_D_matrix = np.zeros((self.N,1))
-                    delay = delay_item[1]
-                    current_thread_D_matrix[row_index] = delay
-                    delay_edge = delay_item[0]
-                    directed_A_matrix, removed_edges = self.create_directed_A_matrix(delay_edge)
-                    G_matrices = self.create_directed_G_matrices(directed_A_matrix, removed_edges)
-                    D_matrices.append([current_thread_D_matrix, G_matrices])     
-        self.D_matrices = D_matrices
-        return
-    
-
-    
-    # Calculates and returns the D matrix for the current time from the data in df
-    def fetch_D_matrix(self, df):
-        D_matrix = np.zeros((self.N,1))
-
-        for station_name, row_index in self.station_indicies.items():
-            station = self.stations[station_name]
-            station_delay = station.calculate_delay(df, self.current_time)
-            #station delay matrix is the delay at the station at the start time
-            D_matrix[row_index] = station_delay
-        return D_matrix
-
-    # Function that creates a directed A matrix from the original A matrix
-    def create_directed_A_matrix(self, directed_edge):
-        # Method
-        # Remove the outgoing edge that the delay was on 
-        # Remove all incoming edges on the current station
-        # Move to all the connected stations except the station where the delay came from, and do the same to them. 
-        #step 1 remove the edge ( start, end)
-        #step 2 for each item in frontier: remove all 1:s in end column expcet for the start row 
-        # add all outgoing edges from current item to frontier (add all 1:s in the row for the current item end station)
-        removed_edges = []
-        removed_edges_with_count_dict = {}
-        directed_A_matrix = copy.deepcopy(self.A_matrix)
-        current_edge = directed_edge
-        directed_A_matrix.loc[current_edge[1],current_edge[0]] = 0
-
-        removed_first_edge = (current_edge[1], current_edge[0])
-        removed_edges.append(removed_first_edge)
-        froniter = [current_edge] #list of nodes to visit
-        visited_notes= [] #list of nodes that have been visited
-        while len(froniter) > 0:
-            current_edge = froniter.pop(0) #(start, end)
-            visited_notes.append(current_edge[1])
-            
-            #change all 1:s in the end column to 0 except for the start row
-            prev_incomming_edge_value = directed_A_matrix.loc[current_edge[0],current_edge[1]] 
-            current_col=  directed_A_matrix.loc[:, current_edge[1]]
-            #get the row index wherre value is >0
-            incomming_edges = current_col[current_col >= 1].index
-            #remove index of the start station
-            current_node_removed_edges = [x for x in incomming_edges if x != current_edge[0]]
-            test_item = [x for x in removed_edges if x[0] == current_edge[1]]
-            for item in test_item:
-                removed_edges.remove(item)
-                removed_edges_with_count_dict[item] = len(current_node_removed_edges)
-
-            directed_A_matrix.loc[:, current_edge[1]] = 0
-            directed_A_matrix.loc[current_edge[0],current_edge[1]] = prev_incomming_edge_value
-
-            outgoings_row = directed_A_matrix.loc[current_edge[1]] # The row for the current endstation
-            
-            outgoings_indicies = outgoings_row[outgoings_row >= 1].index 
-            outgoings_edges_count = len(outgoings_indicies)
-
-            for station_name in current_node_removed_edges:
-                #TO, FROM
-                current_removed_edge = (station_name, current_edge[1])
-                removed_edges.append(current_removed_edge)
-
-            if outgoings_edges_count != 0:
-                weight = 1/outgoings_edges_count
-            else: 
-                weight = 0
-            for index in outgoings_indicies:
-                directed_A_matrix.loc[current_edge[1], index] += weight
-        
-
-            new_edges = [(current_edge[1], x) for x in outgoings_indicies if x != current_edge[0]] 
-            new_edges = [x for x in new_edges if x[1] not in visited_notes]
-            new_edges = [x for x in new_edges if x[1] not in [y[1] for y in froniter]]
-            froniter += new_edges
-  
-        keys = removed_edges_with_count_dict.keys()
-        return directed_A_matrix, removed_edges_with_count_dict
-
-    # Function that executes a time step 
-    def predict_time_step(self):
-        matrix_keys = list(self.G_matrices.keys()) # Get all the time intervals 
-        current_time = self.current_time.time()
-        
-        for i in range(len(matrix_keys)): # Goes through all the time intervalls
-            if current_time >= matrix_keys[i][0] and current_time < matrix_keys[i][1]: # checks which interval current time is in 
-                G_matrix = self.G_matrices[matrix_keys[i]]#  Extracts the correct G matrix that is in to the correct interval
-                break
-            
-        current_delay = self.D_matrix
-    
-        #matrix multiplication of G and D
-        difference = np.matmul(G_matrix, current_delay)
-       
-        #adds the difference to the current delay
-        self.D_matrix = current_delay + difference
-
-        # Goes throigh all all stations and updates the new delay
-        for station_name, row_index in self.station_indicies.items():
-            station = self.stations[station_name]
-            station.delay = self.D_matrix[row_index]
-            
-        #add time step to the current time
-        self.current_time += pd.DateOffset(minutes = self.time_step,)
-        return
-
-     # Function that executes a time step 
-    def predict_time_step_with_direction(self):
-        matrix_keys = list(self.G_matrices.keys()) # Get all the time intervals 
-        current_time = self.current_time.time()
-        
-        for delay_thread in self.D_matrices: 
-            current_delay = delay_thread[0]
-            G_matrices = delay_thread[1]
-        
-            for i in range(len(matrix_keys)): # Goes through all the time intervalls
-                if current_time >= matrix_keys[i][0] and current_time < matrix_keys[i][1]: # checks which interval current time is in 
-                    G_matrix = G_matrices[matrix_keys[i]]#  Extracts the correct G matrix that is in to the correct interval
-                    break
-                
-            G_matrix = pd.DataFrame(G_matrix, index=self.stations, columns=self.stations)
-            difference = np.matmul(G_matrix, current_delay)
-            difference = np.array(difference)
-
-            delay_thread[0] = current_delay + difference
-
-        total_delay = np.zeros((self.N,1))
-        for delay_thread in self.D_matrices: #sum all individual delay matrices
-            total_delay += delay_thread[0]
-            
-        # Goes throigh all all stations and updates the new delay
-        for station_name, row_index in self.station_indicies.items():
-            station = self.stations[station_name]
-            station.delay = total_delay[row_index]
-
-        self.D_matrix = total_delay #update the delay matrix
-        #add time step to the current time
-        self.current_time += pd.DateOffset(minutes = self.time_step,)
-        return
-    
-    # Creates and add station to the network
-    def add_station(self, name, id, df):
-        station = Station(name, id)
-        station.initiate_station(df, self.current_time)
-        self.stations[name] = station
-        self.N += 1
-        return
-
-    # Creates and add edge to the network
-    def add_edge(self, id, start, end, df, adj_matrix):
-        edge = Edge(id, start, end, adj_matrix)
-        edge.initiate_edge(df)
-        key = (start,end)
-        self.edges[key] = edge
-        return
-    
     # Find all stations in the data and add them to the network
     def extract_stations(self, df):
         stations_depart = df['Avgångsplats'].unique()
@@ -533,15 +358,91 @@ class Network:
             station = self.stations[station_name]
             station.set_N_in(neighbours_in)
             station.set_N_out(neighbours_out)
+
+        # Create a dictionary with all stations and their index in the network
+        station_indices = {station: idx for idx, station in enumerate(self.stations)} # All stations in the network
+        self.station_indices = station_indices
+        return
+    
+    # Creates and add station to the network
+    def add_station(self, name, id, df):
+        station = Station(name, id)
+        station.initiate_station(df, self.current_time)
+        self.stations[name] = station
+        self.N += 1
+        return
+    
+    # Extract all edges from the data and add them to the network
+    def extract_edges_and_A_matrix(self, df):
+        unique_edges = df[['Avgångsplats', 'Ankomstplats']].drop_duplicates()
+        
+        # Convert to a list of lists 
+        edges = unique_edges.values.tolist()
+        
+        # Create the undirected adjacency matrix of the network with the data from the edges
+        adj_matrix = self.create_adjacency_matrix(edges) 
+        self.A_matrix = adj_matrix
+
+        # for every edge, add it to the network
+        for i, edge in enumerate(edges):
+            self.add_edge(i, edge[0], edge[1], df, adj_matrix.loc[edge[0]][edge[1]])
+            
+        return
+    
+    # Creates and add edge to the network
+    def add_edge(self, id, start, end, df, adj_matrix):
+        edge = Edge(id, start, end, adj_matrix)
+        edge.initiate_edge(df)
+        key = (start,end)
+        self.edges[key] = edge
+        return
+    
+
+    # Calculates the D matrix by going through the station and extract the delays
+    def extract_D_matrix(self):
+        D_matrix = np.zeros((self.N,1))
+        
+        for station_name, row_index in self.station_indices.items():
+            station = self.stations[station_name]
+            #station delay matrix is the delay at the station at the time
+            D_matrix[row_index] = station.delay
+            
+        self.D_matrix = D_matrix
+        return
+    
+    # Calculates the D matrices for each individual delay by going through the station and extract the delays
+    def extract_D_matrices(self):
+        D_matrices = []
+        #loop through all stations
+        for station_name, row_index in self.station_indices.items():
+            station = self.stations[station_name]
+            #if there is any delay at the station
+            if len(station.delay_origins) > 0:
+                #fetching the delay origins from the sataions and saving it in delays variable, each item in the list looks like this: ((start, end), delay)
+                delays = station.delay_origins
+                for delay_item in delays:
+                    #create a D matrix for the current delay
+                    current_thread_D_matrix = np.zeros((self.N,1))
+                    delay = delay_item[1] #delay value is the second item in the tuple
+                    current_thread_D_matrix[row_index] = delay #set the delay at the current station (row_index)
+                    delay_edge = delay_item[0] #delay edge is the first item in the tuple, this is the edge that the delay came from
+
+                    #create a directed A matrix and the G matrices for the current delay
+                    directed_A_matrix, removed_edges = self.create_directed_A_matrix(delay_edge)
+                    G_matrices = self.get_directed_G_matrices(directed_A_matrix, removed_edges)
+
+                    D_matrices.append([current_thread_D_matrix, G_matrices]) #  will be in this format: [(D_matrix, [G_matrices]), (D_matrix, [G_matrices])...] 
+                    
+        self.D_matrices = D_matrices
         return
 
-    # Creates the adjacency matrix of the network, that is 1 if the stations are connected with an edge, 0 otherwise
+        # Creates the adjacency matrix of the network, that is 1 if the stations are connected with an edge, 0 otherwise
     def create_adjacency_matrix(self, edges):
-        station_indices = {station: idx for idx, station in enumerate(self.stations)} # All stations in the network
-        self.station_indicies = station_indices
+        station_indices = self.station_indices
         n = self.N
-        adj_matrix = np.zeros((n, n), dtype=float) # Creates an empty matrix 
+        adj_matrix = np.zeros((n, n), dtype=float) # Creates an empty matrix to fill with 1 if the stations are connected
 
+        # goes through edges and add 1 in the correct corresponding position in adj_matrix
         for edge in edges:
             depart_station = edge[0] 
             arrive_station = edge[1]
@@ -557,35 +458,45 @@ class Network:
 
         return adj_matrix_df
     
-    # Extract all edges from the data and add them to the network
-    def extract_edges(self, df):
-        unique_edges = df[['Avgångsplats', 'Ankomstplats']].drop_duplicates()
-        
-        # Convert to a list of lists 
-        edges = unique_edges.values.tolist()
-        
-        adj_matrix = self.create_adjacency_matrix(edges)
-        self.A_matrix = adj_matrix
+    # Function that creates a directed A matrix from the original A matrix based on a directed delay. 
+    # That is, it follows the direction the delay is spreading in. 
+    # The functon follows this method to create the direted A matrix: 
+        # Remove the outgoing edge that the delay was on 
+        # Remove all incoming edges on the current station
+        # Move to all the connected stations except the station where the delay came from, and do the same to them. 
+        # step 1 remove the edge (start, end)
+        # step 2 for each item in frontier: remove all 1:s in end column expcet for the start row 
+        # add all outgoing edges from current item to frontier (add all 1:s in the row for the current item end station)
+    def create_directed_A_matrix(self, directed_edge):
+        removed_edges = []  #list to store the removed edges, this is a temporary list that the edges will be added to before they are added to the count dict
+        removed_edges_with_count = {} #dict to store the removed edges with the count of how many edges that were removed from the end station
+        directed_A_matrix = copy.deepcopy(self.A_matrix)
 
-        # for every edge, add it to the network
-        for i, edge in enumerate(edges):
-            self.add_edge(i, edge[0], edge[1], df, adj_matrix.loc[edge[0]][edge[1]])
-        return
+        # Initialize by removing the edge in the opposite direction of the delay
+        directed_A_matrix = remove_initial_edge(directed_A_matrix, directed_edge, removed_edges)
 
+        frontier = [directed_edge]
+        visited_nodes = []
+
+        while frontier: # while there are nodes to visit, bfs algorithm
+            current_edge = frontier.pop(0)
+            visited_nodes.append(current_edge[1])
+
+            # Process the current edge and get the updated directed A matrix, send in the removed edges and the removed edges with count dict
+            directed_A_matrix = process_current_edge(directed_A_matrix, current_edge, removed_edges, removed_edges_with_count)
+
+            # Get new edges to be added to the frontier
+            new_edges = get_new_edges_to_frontier(directed_A_matrix, current_edge, visited_nodes, frontier)
+            frontier.extend(new_edges)
+
+        return directed_A_matrix, removed_edges_with_count
+    
+    
     # Function that extracts the G matrices for each hour of the day
+    # sets the G matrices in the network, does not return anything
     def extract_G_matrices(self):
-        G_matrices = {}
         n = self.N
-        
-        for i in range(24): 
-            start_time = pd.to_datetime(f"2019-03-31 {i}:00:00.000").time()
-            if i == 23:
-                end_time = pd.to_datetime(f"2019-03-31 00:00:00.000").time()
-            else:
-                end_time = pd.to_datetime(f"2019-03-31 {i+1}:00:00.000").time()
-         
-            #initiates the G matrix for the current time span, all values are 0 at the start
-            G_matrices[(start_time, end_time)] = np.zeros((n, n), dtype=float)
+        G_matrices = create_24_hour_dict(matrix_element=True, n=n) # Creates a dictionary with 24 hours as keys and an empty nxn matrix as values
         
         #populating the G matrices
         for time_span in G_matrices.keys():
@@ -594,110 +505,208 @@ class Network:
         self.G_matrices = G_matrices
         return
     
-    # Function that extracts the G matrices for each hour of the day
-    def create_directed_G_matrices(self, A_matrix, removed_edges):
-        G_matrices = {}
+    # Function that extracts the G matrices for each hour of the day with a directed delay
+    # extra inputs compared to the normal G matrix is the A matrix and the removed edges
+    # returns the G matrices
+    def get_directed_G_matrices(self, A_matrix, removed_edges):
         n = self.N
-        
-        for i in range(24): 
-            start_time = pd.to_datetime(f"2019-03-31 {i}:00:00.000").time()
-            if i == 23:
-                end_time = pd.to_datetime(f"2019-03-31 00:00:00.000").time()
-            else:
-                end_time = pd.to_datetime(f"2019-03-31 {i+1}:00:00.000").time()
-         
-            #initiates the G matrix for the current time span, all values are 0 at the start
-            G_matrices[(start_time, end_time)] = np.zeros((n, n), dtype=float)
+        G_matrices = create_24_hour_dict(matrix_element=True, n=n)
         
         #populating the G matrices
         for time_span in G_matrices.keys():
             G_matrices[time_span] = self.calculate_G_matrix(G_matrices[time_span], time_span, n, A_matrix = A_matrix, removed_edges = removed_edges)
        
         return G_matrices
-
+    
     # Function that calculates the G matrix for a specific time span
     # G_matrix should be an nxn empty matrix, time span should be a tuple of two times in Timestamp format only (0,1), (1,2) etc
     def calculate_G_matrix(self, G_matrix, time_span, n, A_matrix = None, removed_edges = None):
-        if A_matrix is None:
+        if A_matrix is None: #if no A matrix is given, use the network undirected A matrix
             A_matrix = self.A_matrix
-        #looping through all stations
+            
+        # if there are removed edges, get the keys of the removed edges, otherwise set the removed edges keys to an empty list
         if removed_edges:
             removed_edges_keys = removed_edges.keys()
         else:
             removed_edges_keys = []
-        for station_name, row_index in self.station_indicies.items():
+        
+        #looping through all stations
+        for station_name, row_index in self.station_indices.items():
 
             i_station = self.stations[station_name] #station object of the current row
             #going throgh all stations again for the values of the G matrix columns for the current row
             for col_index in range(n):
-                Aji = A_matrix.iloc[col_index,row_index]
-                j_station_name = [key for key, value in self.station_indicies.items() if value == col_index][0]
-                j_station = self.stations[j_station_name] #stati
-                pji = 0
-                value_to_add = 0
-                if Aji >= 1: #if there is an edge from j to i, we extraact the values of the edge
-                    Bj = j_station.fetch_Bi(time_span)
-                    edge_ji = self.edges[(j_station.name, i_station.name)]
-                    pji = edge_ji.pij
-                  
-                    Aji = 1 # set the value to 1 to make sure the node is weighted as 1
-                    
-                    #gå igenom removed edges och hitta edges som har samma start som j_station_name
-                    #rmoved edeges keys [(start, end), (start, end)]
-                    
-                    edges_to_add = [x for x in removed_edges_keys if x[0] == j_station_name]
-                    for edge in edges_to_add:
-                        keys_edges = self.edges.keys()
-                        if edge in keys_edges:
-                            edge_object = self.edges[edge]
-                            edge_Aij = edge_object.Aij
-                            edge_pij = edge_object.pij
-                            value_to_add += edge_object.Aij * edge_object.pij * Bj
-        
-                Bj = j_station.fetch_Bi(time_span)
-                
-                #kroneker value should only be 1 if the row and col stations are the same
-                kronecker = 1 if col_index == row_index else 0
-                #calculating the value of the G matrix at the current row and column
-                value = Aji * pji * Bj - Bj * kronecker + value_to_add
+                value = calculate_G_matrix_values(time_span, A_matrix, removed_edges_keys, row_index, i_station, col_index, self.station_indices, self.stations, self.edges)
                 G_matrix[row_index][col_index] = value
         return G_matrix
-    
-    # Evaluates the network against the actual data.
+
+    # Evaluates the network against the real data in df.
     def evaluate_network(self, df, time_steps, visualize = False, directed_delay = True):
         print("Evaluating network")
         print("Time steps: ", time_steps)
         print("Network start time: ", self.current_time)
-        print("DIRECTED DELAY: ", directed_delay)
+        if directed_delay:
+            print("Using directed delay")
+        else:
+            print("Using undirected delay")
         print("-------------------------")
 
+        # Taks as many time steps as the user sent in
         for step in range(time_steps):
 
-            true_delay = self.fetch_D_matrix(df) #matrix that holds the true delay of the data in df
+            #fetching the true delay of the system from the data in df
+            true_delay = self.get_D_matrix(df) #matrix that holds the true delay of the data in df
             true_delay = np.round(true_delay, 3)#round the delay matrix to 3 decimals
             
+            #take a time step, either with directed delay or undirected delay
             if directed_delay:
-                self.predict_time_step_with_direction() # predict the delay matrix with directions
+                self.predict_time_step_with_direction() 
             else: 
                 self.predict_time_step()
 
+            #fetching the predicted delay of the system
             predicted_delay = self.D_matrix #predicted delay matrix
             predicted_delay = np.round(predicted_delay, 3) #round the delay matrix to 3 decimals
 
+            # visualizing the prediction and actual data by creating maps of the network. These can  b
             if visualize:
                 self.visualize_comparative_delays(true_delay, predicted_delay, step, title="Comparative Delay Visualization", cap=0.25)
 
-            comparison = np.concatenate((true_delay, predicted_delay), axis=1) # Prints the delaymatrix so both values are side by side 
+            #creating a comparison array to hold the true, predicted and the difference between the two
+            comparison = np.concatenate((true_delay, predicted_delay), axis=1)
             comparison = np.round(comparison, 3) #round the comparison matrix to 3 decimals
-            comparison_matrix = np.zeros((self.N,1))
+            #difference array for the difference between the true and predicted delay
+            difference_array = np.zeros((self.N,1))
+            #populating the difference array with the difference between the true and predicted delay for each station
             for i in range(self.N):
-                comparison_matrix[i] = true_delay[i] - predicted_delay[i]
-            comparison = np.concatenate((comparison, comparison_matrix), axis=1)
+                difference_array[i] = true_delay[i] - predicted_delay[i]
+            # add the difference array to the comparison array
+            comparison = np.concatenate((comparison, difference_array), axis=1)
+            #print the comparison delay matrix, default is to not print all stations, but can be changed to print_all=True to print all stations
             self.print_comparison_delay_matrix(comparison, print_all=False)
             print(" ")
 
         return
+    
+    # Calculates and returns the D matrix for the current time from the data in df
+    def get_D_matrix(self, df):
+        D_matrix = np.zeros((self.N,1)) # Creates an empty matrix to fill with the delay of the stations
+        # Goes through all stations and add the delay to the D matrix
+        for station_name, row_index in self.station_indices.items():
+            station = self.stations[station_name]
+            station_delay = station.calculate_delay(df, self.current_time)
+            #station delay matrix is the delay at the station at the start time
+            D_matrix[row_index] = station_delay
+        return D_matrix
 
+
+    # Function that executes an undirected time step 
+    def predict_time_step(self):
+        matrix_keys = list(self.G_matrices.keys()) # Get all the time intervals 
+        current_time = self.current_time.time()
+        
+        G_matrix = find_current_time_G_matrix(matrix_keys, current_time, self.G_matrices)
+            
+        current_delay = self.D_matrix
+    
+        #matrix multiplication of G and D to get the difference between this time step and the next
+        difference = np.matmul(G_matrix, current_delay)
+       
+        #adds the difference to the current delay
+        self.D_matrix = current_delay + difference
+
+        # Goes through all stations and updates the new delay
+        for station_name, row_index in self.station_indices.items():
+            station = self.stations[station_name]
+            station.delay = self.D_matrix[row_index]
+            
+        #add one time step to the current time
+        self.current_time += pd.DateOffset(minutes = self.time_step,)
+        return
+
+     # Function that executes a directed delay time step 
+    def predict_time_step_with_direction(self):
+        matrix_keys = list(self.G_matrices.keys()) # Get all the time intervals 
+        current_time = self.current_time.time()
+        
+        #go through each individual delay matrix and update the delay
+        for delay_thread in self.D_matrices: 
+            current_delay = delay_thread[0]
+            G_matrices = delay_thread[1]
+        
+            G_matrix = find_current_time_G_matrix(matrix_keys, current_time, G_matrices)
+            #matrix multiplication of G and D to get the difference between this time step and the next
+            difference = np.matmul(G_matrix, current_delay)
+            delay_thread[0] = current_delay + difference #update the delay matrix in the delay thread
+
+        # create a total delay matrix that will hold the sum of all individual delay matrices
+        total_delay = np.zeros((self.N,1))
+        for delay_thread in self.D_matrices: #sum all individual delay matrices
+            total_delay += delay_thread[0]
+            
+        # Goes through all stations and updates the new delay
+        for station_name, row_index in self.station_indices.items():
+            station = self.stations[station_name]
+            station.delay = total_delay[row_index]
+
+        self.D_matrix = total_delay #update the delay matrix
+        #add one time step to the current time
+        self.current_time += pd.DateOffset(minutes = self.time_step_size,)
+        return
+    
+    #Visualizes actual vs. predicted delays using network graphs.
+    def visualize_comparative_delays(self, actual_delay, predicted_delay, step, title="Comparative Delay Visualization", cap=0.25):
+        # Create two separate graphs: one for actual delays and one for predicted delays
+        graphs = {"Actual Delay": actual_delay, "Predicted Delay": predicted_delay}
+        
+        for graph_title, delay_array in graphs.items():
+            # Create a graph using the graphviz library
+            G = pgv.AGraph(directed=True)
+            # go through all stations and add nodes to the graph 
+            for station_name, row_index in self.station_indices.items():
+                delay = delay_array[row_index][0]
+                color = get_color(delay, cap) #get the color of the node based on the delay value
+                G.add_node(station_name, style="filled", fillcolor=color, fontsize=10, margin="0.1,0.1")
+
+            # Add edges from the network into the graph
+            for (start, end), _ in self.edges.items():
+                G.add_edge(start, end, penwidth=2, color="gray")
+
+            # Adjust layout for aesthetics, uncomment this line if you want to adjust the layout of the graph according to the graphviz documentation
+            #G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
+            
+            # Save the graph to a file
+            output_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
+            G.layout(prog="fdp") # can change this to change the layout of the graph
+            G.draw(output_path, format="png")
+            print(f"{graph_title} graph saved to {output_path}")
+
+        # Display the graphs side by side using matplotlib
+        _, axes = plt.subplots(1, 2, figsize=(16, 8))
+        for idx, (graph_title, _) in enumerate(graphs.items()):
+            img_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
+            img = plt.imread(img_path)
+            axes[idx].imshow(img)
+            axes[idx].axis("off")
+            axes[idx].set_title(graph_title, fontsize=14)
+
+        plt.suptitle(title, fontsize=16)
+        plt.tight_layout()
+        #save the plot as a png      
+        plt.savefig(f"images/compared_delays_step_{step + 1}.png", dpi=300, bbox_inches='tight')
+        return
+
+    # Function that prints the network information
+    def print_network_info(self):
+        for station_name in self.stations:
+            self.print_station_info(station_name)
+        for edge in self.edges:
+            start = edge[0]
+            end = edge[1]
+            self.print_edge_info(start, end)
+        print(self.A_matrix)
+        self.print_delay_matrix()
+        return
 
     # Function that prints the station information of a specific station
     def print_station_info(self, station_name):
@@ -729,13 +738,12 @@ class Network:
             delay_matrix = self.D_matrix
         print("Delay matrix at time: ", self.current_time)
         if print_all: 
-            for station_name, row_index in self.station_indicies.items(): 
+            for station_name, row_index in self.station_indices.items(): 
                 print(f"{station_name}: {delay_matrix[row_index][0]}")
         else: 
-            for station_name, row_index in self.station_indicies.items(): 
+            for station_name, row_index in self.station_indices.items(): 
                 if(abs(delay_matrix[row_index][0]) >= cap):
                     print(f"{station_name}: {delay_matrix[row_index][0].round(3)}")
-            
         return
     
     # Print the comparison delay matrix. That is the matrix that includes the actual delay, the predicted delay and the difference between them. 
@@ -743,7 +751,7 @@ class Network:
         print("Delay matrices at time: ", self.current_time)
         print("Station: True delay, Predicted delay, Difference")
         
-        name_array = np.array(list(self.station_indicies.keys())) #array of station names
+        name_array = np.array(list(self.station_indices.keys())) #array of station names
         comparison_df = pd.DataFrame(comparison_delay_matrix, index = name_array, columns = ["True delay", "Predicted delay", "Difference"]) #put in a dataframe for easier visualization
         comparison_df= comparison_df.sort_index()        
         
@@ -753,85 +761,5 @@ class Network:
             #filtering out the rows that have 0 in both columns
             comparison_df = comparison_df[(comparison_df["True delay"] != 0) | (abs(comparison_df["Predicted delay"]) >= cap)]
             print(comparison_df)
-        return
-
-    # Function that prints the network information
-    def print_network_info(self):
-        for station_name in self.stations:
-            self.print_station_info(station_name)
-        for edge in self.edges:
-            start = edge[0]
-            end = edge[1]
-            self.print_edge_info(start, end)
-        print(self.A_matrix)
-        self.print_delay_matrix()
-        return
-    
-   
-    #Visualizes actual vs. predicted delays using network graphs.
-    def visualize_comparative_delays(self, actual_delay, predicted_delay, step, title="Comparative Delay Visualization", cap=0.25):
-        # Function to map delays to colors
-        def get_color(value, cap):
-
-            #If the value is below the cap, returns a neutral color.
-            if abs(value) <= cap:
-                return "#D3D3D3"  # Neutral color for small delays (gray)
-
-            # Color mapping for significant delays
-            color_map = {
-                -15: "#0D47A1", -10: "#1976D2", -5: "#42A5F5", 
-                -3: "#90CAF9", -1: "#E3F2FD", 1: "#FFEBEE", 
-                3: "#FFCDD2", 5: "#E57373", 10: "#D32F2F", 
-                15: "#B71C1C"
-            }
-            
-            if value < 0:
-                for key in sorted(color_map.keys(), reverse=True):
-                    if value >= key:
-                        return color_map[key]
-            else:
-                for key in sorted(color_map.keys()):
-                    if value <= key:
-                        return color_map[key]
-
-            return color_map[key]
-
-        # Create two separate graphs: one for actual delays and one for predicted delays
-        graphs = {"Actual Delay": actual_delay, "Predicted Delay": predicted_delay}
-        
-        for graph_title, delay_array in graphs.items():
-            G = pgv.AGraph(directed=True)
-            # Add nodes with colors based on actual or predicted delays
-            for station_name, row_index in self.station_indicies.items():
-                delay = delay_array[row_index][0]
-                color = get_color(delay, cap)  # Use delay to determine color'
-                G.add_node(station_name, style="filled", fillcolor=color, fontsize=10, margin="0.1,0.1")
-
-            # Add edges from the network
-            for (start, end), _ in self.edges.items():
-                G.add_edge(start, end, penwidth=2, color="gray")
-
-            # Adjust layout for aesthetics
-            #G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
-            
-            # Save the graph to a file
-            output_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
-            G.layout(prog="fdp")
-            G.draw(output_path, format="png")
-            print(f"{graph_title} graph saved to {output_path}")
-
-        # Display the graphs side by side using matplotlib
-        _, axes = plt.subplots(1, 2, figsize=(16, 8))
-        for idx, (graph_title, _) in enumerate(graphs.items()):
-            img_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
-            img = plt.imread(img_path)
-            axes[idx].imshow(img)
-            axes[idx].axis("off")
-            axes[idx].set_title(graph_title, fontsize=14)
-
-        plt.suptitle(title, fontsize=16)
-        plt.tight_layout()
-        #save the plot as a png      
-        plt.savefig(f"images/compared_delays_step_{step + 1}.png", dpi=300, bbox_inches='tight')
         return
 
