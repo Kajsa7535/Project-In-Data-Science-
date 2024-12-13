@@ -1,6 +1,5 @@
 TODO bugs:
 
-
 known bugs that will not be fixed:
 - if the network time changes from 18:59 to 19:00 a new G matrix will be selected and it might be 0 for some delay calculations
 - Test and check why we get negative predicted delays in the test_network_U_fln_Cst_Ga_no_time
