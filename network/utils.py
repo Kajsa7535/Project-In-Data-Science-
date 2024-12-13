@@ -60,6 +60,8 @@ def process_current_edge(directed_A_matrix, current_edge, removed_edges, removed
     for node in outgoing_nodes:
         directed_A_matrix.loc[end_node, node] += weight
     return directed_A_matrix
+
+
 # Generate new edges to be added to the frontier.
 def get_new_edges_to_frontier(directed_A_matrix, current_edge, visited_nodes, frontier):
     _, end_node = current_edge
