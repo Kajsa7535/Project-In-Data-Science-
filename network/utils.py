@@ -56,6 +56,7 @@ def process_current_edge(directed_A_matrix, current_edge, removed_edges, removed
     outgoing_edges = directed_A_matrix.loc[end_node]
     outgoing_nodes = outgoing_edges[outgoing_edges >= 1].index.tolist()
     outgoing_edge_count = len(outgoing_nodes)
+    
     weight = 1 / outgoing_edge_count if outgoing_edge_count > 0 else 0
     for node in outgoing_nodes:
         directed_A_matrix.loc[end_node, node] += weight
