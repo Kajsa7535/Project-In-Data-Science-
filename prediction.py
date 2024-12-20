@@ -26,7 +26,7 @@ def extract_random_start_time(df, cap = 7):
     return random_start_time
 
 
-def main(network_name, network_start_time = None, time_steps=10, time_step_size = 1, visualize = True, directed_delay = True):
+def main(network_name, network_start_time = None, time_steps=10, time_step_size = 1, visualize = False, directed_delay = False):
     #creating image folder if it does not exist
     create_img_folder()
     #removing old images if there are any
