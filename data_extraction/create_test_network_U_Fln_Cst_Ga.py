@@ -17,6 +17,11 @@ file_path = '../data/month_data.csv'
 # Read the CSV
 df = pd.read_csv(file_path, sep=';', encoding='utf-8')
 
+#print number of records in the dataset
+print('Number of records in the dataset:',len(df))
+#number of features in the dataset
+print('Number of features in the dataset:',len(df.columns))
+
 specific_date = '2019-03-27'  # Change this to desired date
 
 #filter the dataset to specific date and get a copy

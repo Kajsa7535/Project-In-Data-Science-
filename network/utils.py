@@ -102,7 +102,11 @@ def calculate_G_matrix_values(time_span, A_matrix, removed_edges_keys, row_index
         #kroneker value should only be 1 if the row and col stations are the same
         kronecker = 1 if col_index == row_index else 0
         #calculating the value of the G matrix at the current row and column
-        value = Aji * pji * Bj - Bj * kronecker + value_to_add
+        if Aji < 1:
+            Aji = 0
+        value = Aji * pji * Bj - Bj * kronecker 
+        if value != 0: #if this value is zero we do not need to add the value to the G matrix, since the edge should not propagate any delays
+            value += value_to_add 
         return value
 
 # Calculates the value that will be added to GG value, which comes from an edge that has been removed. This only happens when the model used the flag for directed delays

@@ -426,11 +426,9 @@ class Network:
                     delay = delay_item[1] #delay value is the second item in the tuple
                     current_thread_D_matrix[row_index] = delay #set the delay at the current station (row_index)
                     delay_edge = delay_item[0] #delay edge is the first item in the tuple, this is the edge that the delay came from
-
                     #create a directed A matrix and the G matrices for the current delay
                     directed_A_matrix, removed_edges = self.create_directed_A_matrix(delay_edge)
                     G_matrices = self.get_directed_G_matrices(directed_A_matrix, removed_edges)
-
                     D_matrices.append([current_thread_D_matrix, G_matrices]) #  will be in this format: [(D_matrix, [G_matrices]), (D_matrix, [G_matrices])...] 
                     
         self.D_matrices = D_matrices
@@ -621,7 +619,7 @@ class Network:
             station.delay = self.D_matrix[row_index]
             
         #add one time step to the current time
-        self.current_time += pd.DateOffset(minutes = self.time_step,)
+        self.current_time += pd.DateOffset(minutes = self.time_step_size)
         return
 
      # Function that executes a directed delay time step 
@@ -661,23 +659,45 @@ class Network:
         
         for graph_title, delay_array in graphs.items():
             # Create a graph using the graphviz library
-            G = pgv.AGraph(directed=True)
+            G = pgv.AGraph(directed=True, seed=1234)
             # go through all stations and add nodes to the graph 
             for station_name, row_index in self.station_indices.items():
                 delay = delay_array[row_index][0]
                 color = get_color(delay, cap) #get the color of the node based on the delay value
-                G.add_node(station_name, style="filled", fillcolor=color, fontsize=10, margin="0.1,0.1")
+                if delay: #if there is a delay, add the delay to the label
+                   G.add_node(
+                        station_name, 
+                        label=f"{station_name}\n{delay:.2f}", 
+                        style="filled", 
+                        fillcolor=color, 
+                        fontsize=9, 
+                        margin="0.1,0.05", 
+                        fixedsize=False)
+
+                else:
+                    G.add_node(
+                        station_name, 
+                        label=f"{station_name}", 
+                        style="filled", 
+                        fillcolor=color, 
+                        fontsize=9, 
+                        margin="0.1,0.05", 
+                        fixedsize=False)
 
             # Add edges from the network into the graph
             for (start, end), _ in self.edges.items():
-                G.add_edge(start, end, penwidth=2, color="gray")
+                length = (len(start) + len(end))/15
+                if length < 1:
+                    length = 1
+                G.add_edge(start, end, penwidth=2, len=length, color="gray")
 
             # Adjust layout for aesthetics, uncomment this line if you want to adjust the layout of the graph according to the graphviz documentation
-            #G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="400")
+            #G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="600")
+            G.graph_attr.update(dpi="500")
             
             # Save the graph to a file
             output_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
-            G.layout(prog="fdp") # can change this to change the layout of the graph
+            G.layout(prog="neato") # can change this to change the layout of the graph
             G.draw(output_path, format="png")
             print(f"{graph_title} graph saved to {output_path}")
 
