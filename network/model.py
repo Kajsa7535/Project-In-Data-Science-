@@ -693,7 +693,7 @@ class Network:
 
             # Adjust layout for aesthetics, uncomment this line if you want to adjust the layout of the graph according to the graphviz documentation
             #G.graph_attr.update(rankdir="LR", nodesep="2.0", ranksep="1.5", splines="true", dpi="600")
-            G.graph_attr.update(dpi="500") #remove or change this line for different dpi (resolution)
+            #G.graph_attr.update(dpi="500") #uncomment or change this line for different dpi (resolution)
             
             # Save the graph to a file
             output_path = f"images/{graph_title.lower().replace(' ', '_')}_step_{step + 1}.png"
