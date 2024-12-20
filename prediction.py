@@ -20,8 +20,13 @@ def print_initial_delay_matrix(network):
     print(" --------------------------------------------")
     print(" ")
 
+def extract_random_start_time(df, cap = 7):
+    delay_rows = df[df['AvgFörsening'] > cap]
+    random_start_time = delay_rows.sample(1)['UtfAvgTid'].values[0]
+    return random_start_time
 
-def main(network_name, network_start_time = None, time_steps=10, time_step_size = 1, visualize = False, directed_delay = True):
+
+def main(network_name, network_start_time = None, time_steps=10, time_step_size = 1, visualize = False, directed_delay = False):
     #creating image folder if it does not exist
     create_img_folder()
     #removing old images if there are any
@@ -36,7 +41,7 @@ def main(network_name, network_start_time = None, time_steps=10, time_step_size 
     #creating a network
     df_network = pd.read_csv(network_path, sep=',', encoding='utf-8')
     network = Network()
-    
+
     #if there is a start time, convert it to datetime
     if network_start_time:
         network_start_time_string = f"{network_start_time}:00"
@@ -65,7 +70,7 @@ if __name__ == "__main__":
     parser.add_argument("--time_steps", type=int, default=10, help="Number of time steps to evaluate the network")
     parser.add_argument("--time_step_size", type=int, default=1, help="Size of each time step")
     parser.add_argument("--visualize", action="store_true", default=False,  help="Visualize the network during evaluation")
-    parser.add_argument("--directed_delay", action="store_true", default=True, help="Consider directed delay in the evaluation")
+    parser.add_argument("--directed_delay", action="store_true", default=False, help="Consider directed delay in the evaluation")
 
     args = parser.parse_args()
 

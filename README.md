@@ -54,15 +54,15 @@ It has 1 mandatory argument and 5 optional.
 - Network start time: The start time of the prediction you want to make.
   - Ex: "prediction.py test_network --network_start_time "2019-03-27 16:39" ". The format needs to be in: "YYYY-MM-DD HH:MM"
   - Default value is the first time a delay can be found in the network
-- Numer of time steps to predict: This is how many time steps you want the prediction to do
+- Number of time steps to predict: This is how many time steps you want the prediction to do
   - Ex: "prediction.py test_network --time_steps 10"
   - Default value is 10
 - Time step size: This is the size of each time step (in minutes)
   - Ex: "prediction.py test_network --time_step_size 3"
   - Default valuee is 1
 - Visualization: This is a flag that decides if you want to generate maps of the visualization or not. These images will be created at each timestep and for both the actual delay and the predicted.
-  - Ex: "prediction.py test_network --visualize True"
+  - Ex: "prediction.py test_network --visualize" to run with visualization
   - Default value is False
-- Directed delay: This is a flag that decised what model you want to use. If true, the model with directed delay will be used (the delay will mostly only spread forward and not in all directions). If false, the model will use the model that spreads in all directions.
-  - Ex: "prediction.py test_network --directed_delay False"
-  - Default value is True
+- Directed delay: This is a flag that decised what model you want to use. If True, the model with directed delay will be used (the delay will mostly only spread forward and not in all directions). If False, the model will use the model that spreads in all directions.
+  - Ex: "prediction.py test_network --directed_delay" to run with directed delay
+  - Default value is False
